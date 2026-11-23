@@ -6,6 +6,7 @@ import com.squareup.picasso.Picasso
 import okhttp3.Request
 import okhttp3.Response
 import org.fossify.commons.FossifyApp
+import org.fossify.gallery.helpers.FastScanner
 
 class App : FossifyApp() {
 
@@ -19,5 +20,6 @@ class App : FossifyApp() {
 
             override fun shutdown() {}
         }).build())
+        FastScanner.prewarm(this)
     }
 }

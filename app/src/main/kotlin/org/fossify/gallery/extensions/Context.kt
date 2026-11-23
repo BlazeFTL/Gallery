@@ -90,6 +90,9 @@ import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.LOCATION_OTG
 import org.fossify.gallery.helpers.LOCATION_SD
 import org.fossify.gallery.helpers.MediaFetcher
+import org.fossify.gallery.helpers.DirSummaryData
+import org.fossify.gallery.helpers.FastScanner
+import org.fossify.gallery.helpers.PendingRemovals
 import org.fossify.gallery.helpers.MyWidgetProvider
 import org.fossify.gallery.helpers.PicassoRoundedCornersTransformation
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -494,6 +497,13 @@ fun Context.getNoMediaFolders(callback: (folders: ArrayList<String>) -> Unit) {
 }
 
 fun Context.getNoMediaFoldersSync(): ArrayList<String> {
+    if (FastScanner.isEnabled(this)) {
+        try {
+            FastScanner.getNoMediaFolders(this)?.let { return it }
+        } catch (ignored: Exception) {
+        }
+    }
+
     val folders = ArrayList<String>()
 
     val uri = Files.getContentUri("external")
@@ -852,6 +862,9 @@ fun Context.getCachedDirectories(
             directories.removeAll { it.isRecycleBin() }
         }
 
+        // albums the user just emptied must not flash up again while their files are still being deleted
+        directories.removeAll { PendingRemovals.contains(it.path) }
+
         val shouldShowHidden = config.shouldShowHidden || forceShowHidden
         val excludedPaths = if (config.temporarilyShowExcluded || forceShowExcluded) {
             HashSet()
@@ -926,6 +939,12 @@ fun Context.getCachedMedia(
     callback: (ArrayList<ThumbnailItem>) -> Unit
 ) {
     ensureBackgroundThread {
+        if (path != FAVORITES && path != RECYCLE_BIN && FastScanner.isEnabled(this)) {
+            // the native scan is as fast as the cache, skip the stale database rows
+            callback(ArrayList())
+            return@ensureBackgroundThread
+        }
+
         val mediaFetcher = MediaFetcher(this)
         val foldersToScan = if (path.isEmpty()) {
             mediaFetcher.getFoldersToScan()
@@ -1000,7 +1019,7 @@ fun Context.getCachedMedia(
 
                 if (mediaToDelete.isNotEmpty()) {
                     try {
-                        mediaDB.deleteMedia(*mediaToDelete.toTypedArray())
+                        mediaToDelete.forEach { mediaDB.deleteMediumPath(it.path) }
 
                         mediaToDelete.filter { it.isFavorite }.forEach {
                             favoritesDB.deleteFavoritePath(it.path)
@@ -1291,6 +1310,50 @@ fun Context.createDirectoryFromMedia(
         size = size,
         location = getPathLocation(path),
         types = mediaTypes,
+        sortValue = sortValue
+    )
+}
+
+fun Context.createDirectoryFromSummary(
+    summary: DirSummaryData,
+    albumCovers: ArrayList<AlbumCover>,
+    hiddenString: String,
+    getProperFileSize: Boolean
+): Directory {
+    val OTGPath = config.OTGPath
+    var thumbnail: String? = null
+    albumCovers.forEach {
+        if (it.path == summary.path && getDoesFilePathExist(it.tmb, OTGPath)) {
+            thumbnail = it.tmb
+        }
+    }
+
+    val path = summary.path
+    val dirName = getFolderNameFromPath(path).let { if (summary.hidden) "$it $hiddenString" else it }
+    val size = if (getProperFileSize) summary.size else 0L
+    val sorting = config.directorySorting
+    val isSortingAscending = sorting.isSortingAscending()
+    val sortValue = when {
+        sorting and SORT_BY_NAME != 0 -> dirName
+        sorting and SORT_BY_PATH != 0 -> path
+        sorting and SORT_BY_SIZE != 0 -> size.toString()
+        sorting and SORT_BY_COUNT != 0 -> summary.count.toString()
+        sorting and SORT_BY_DATE_MODIFIED != 0 -> (if (isSortingAscending) summary.minModified else summary.maxModified).toString()
+        sorting and SORT_BY_DATE_TAKEN != 0 -> (if (isSortingAscending) summary.minTaken else summary.maxTaken).toString()
+        else -> "0"
+    }
+
+    return Directory(
+        id = null,
+        path = path,
+        tmb = thumbnail ?: summary.cover,
+        name = dirName,
+        mediaCnt = summary.count,
+        modified = summary.modified,
+        taken = summary.taken,
+        size = size,
+        location = getPathLocation(path),
+        types = summary.types,
         sortValue = sortValue
     )
 }

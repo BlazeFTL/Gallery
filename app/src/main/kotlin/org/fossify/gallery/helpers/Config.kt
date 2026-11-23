@@ -7,6 +7,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import org.fossify.commons.helpers.BaseConfig
 import org.fossify.commons.helpers.PROTECTION_PATTERN
+import org.fossify.commons.helpers.SORT_FOLDER_PREFIX
 import org.fossify.commons.helpers.SORT_BY_DATE_MODIFIED
 import org.fossify.commons.helpers.SORT_DESCENDING
 import org.fossify.commons.helpers.VIEW_TYPE_GRID
@@ -18,6 +19,22 @@ import java.util.Locale
 class Config(context: Context) : BaseConfig(context) {
     companion object {
         fun newInstance(context: Context) = Config(context)
+    }
+
+    // the Rust scanner is used when available, this is an escape hatch back to the MediaStore based scanner
+    var useFastScanner: Boolean
+        get() = prefs.getBoolean(USE_FAST_SCANNER, true)
+        set(use) = prefs.edit().putBoolean(USE_FAST_SCANNER, use).apply()
+
+    // folder path (lowercase) -> sorting, for folders using "Use for this folder only"
+    fun getFolderSortingOverrides(): Map<String, Int> {
+        val overrides = HashMap<String, Int>()
+        for ((key, value) in prefs.all) {
+            if (key.startsWith(SORT_FOLDER_PREFIX) && value is Int) {
+                overrides[key.removePrefix(SORT_FOLDER_PREFIX)] = value
+            }
+        }
+        return overrides
     }
 
     var directorySorting: Int

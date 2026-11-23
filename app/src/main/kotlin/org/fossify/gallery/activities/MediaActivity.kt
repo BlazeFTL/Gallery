@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.widget.RelativeLayout
 import androidx.core.net.toUri
@@ -94,6 +95,8 @@ import org.fossify.gallery.helpers.GridSpacingItemDecoration
 import org.fossify.gallery.helpers.IS_IN_RECYCLE_BIN
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MediaFetcher
+import org.fossify.gallery.helpers.FastScanner
+import org.fossify.gallery.helpers.PendingRemovals
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -116,7 +119,6 @@ import java.io.IOException
 class MediaActivity : SimpleActivity(), MediaOperationsListener {
     override var isSearchBarEnabled = true
     
-    private val LAST_MEDIA_CHECK_PERIOD = 3000L
 
     private var mPath = ""
     private var mIsGetImageIntent = false
@@ -198,6 +200,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
     override fun onResume() {
         super.onResume()
+        FastScanner.onForeground(this)
+        FastScanner.addChangeListener(this) { dirs -> onStorageChanged(dirs) }
         updateMenuColors()
         if (mStoredAnimateGifs != config.animateGifs) {
             getMediaAdapter()?.updateAnimateGifs(config.animateGifs)
@@ -268,6 +272,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
     override fun onPause() {
         super.onPause()
+        FastScanner.removeChangeListener(this)
+        FastScanner.onBackground()
         mIsGettingMedia = false
         binding.mediaRefreshLayout.isRefreshing = false
         storeStateVariables()
@@ -550,9 +556,15 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         mLastMediaHandler.removeCallbacksAndMessages(null)
         mLastMediaHandler.postDelayed({
             ensureBackgroundThread {
+                // MediaStore does not report files in hidden folders, the native check looks at folder timestamps
+                val nativeChanged = FastScanner.isEnabled(this) && when {
+                    mPath == FAVORITES || mPath == RECYCLE_BIN -> false
+                    mShowAll -> FastScanner.hasChanges(this)
+                    else -> FastScanner.refreshDir(this, mPath)
+                }
                 val mediaId = getLatestMediaId()
                 val mediaDateId = getLatestMediaByDateId()
-                if (mLatestMediaId != mediaId || mLatestMediaDateId != mediaDateId) {
+                if (nativeChanged || mLatestMediaId != mediaId || mLatestMediaDateId != mediaDateId) {
                     mLatestMediaId = mediaId
                     mLatestMediaDateId = mediaDateId
                     runOnUiThread {
@@ -562,7 +574,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                     checkLastMediaChanged()
                 }
             }
-        }, LAST_MEDIA_CHECK_PERIOD)
+        }, FastScanner.getPollPeriod(this))
     }
 
     private fun showSortingDialog() {
@@ -649,6 +661,17 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                     }
                 }
             }
+        }
+    }
+
+    // files appeared or disappeared, in this folder or elsewhere
+    private fun onStorageChanged(changedDirs: Set<String>) {
+        if (isDestroyed || isFinishing) {
+            return
+        }
+
+        if (changedDirs.isEmpty() || mShowAll || mPath == FAVORITES || mPath == RECYCLE_BIN || changedDirs.contains(mPath)) {
+            getMedia()
         }
     }
 
@@ -1041,11 +1064,99 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             return
         }
 
-        if (
-            config.useRecycleBin
+        val toRecycleBin = config.useRecycleBin
             && !skipRecycleBin
             && !filtered.first().path.startsWith(recycleBinPath)
-        ) {
+
+        if (FastScanner.canDeleteDirectly(this, filtered.map { it.path })) {
+            deleteFilesNatively(filtered, toRecycleBin)
+            return
+        }
+
+        deleteFilesLegacy(filtered, toRecycleBin)
+    }
+
+    // The UI is updated first, the files are removed in the background and report back per file.
+    // Hidden from every scan right away, so a rescan while deleting can not bring them back.
+    private fun deleteFilesNatively(filtered: ArrayList<FileDirItem>, toRecycleBin: Boolean) {
+        val paths = filtered.map { it.path }
+        val deletedPaths = paths.toHashSet()
+        val remaining = mMedia.count { it is Medium && it.path !in deletedPaths }
+        val folderPath = mPath
+        val folderEmptied = remaining == 0 && !mShowAll && folderPath != FAVORITES && folderPath != RECYCLE_BIN
+        val appContext = applicationContext
+        val binRoot = if (toRecycleBin) recycleBinPath else null
+        val deleteEmptyFolder = config.deleteEmptyFolders
+                && !FileDirItem(folderPath, folderPath.getFilenameFromPath(), true).isDownloadsFolder()
+
+        FastScanner.beginDelete(this, paths)
+        mMedia.removeAll { it is Medium && it.path in deletedPaths }
+        if (folderEmptied) {
+            PendingRemovals.add(folderPath)
+        }
+
+        Thread {
+            val codes = FastScanner.delete(paths, binRoot)
+            FastScanner.finishDelete(paths, codes)
+
+            val doneItems = ArrayList<String>()
+            var failedCount = 0
+            paths.forEachIndexed { index, path ->
+                if (codes.getOrElse(index) { -1 } == 0) {
+                    doneItems.add(path)
+                } else {
+                    failedCount++
+                }
+            }
+
+            try {
+                if (toRecycleBin) {
+                    val now = System.currentTimeMillis()
+                    doneItems.forEach { appContext.mediaDB.updateDeleted("$RECYCLE_BIN$it", now, it) }
+                } else {
+                    doneItems.forEach { appContext.deleteDBPath(it) }
+                }
+            } catch (ignored: Exception) {
+            }
+
+            FastScanner.removeFromMediaStore(appContext, doneItems)
+
+            if (folderEmptied) {
+                if (failedCount == 0) {
+                    if (deleteEmptyFolder) {
+                        FastScanner.removeDirIfEmpty(folderPath)
+                    }
+
+                    try {
+                        appContext.directoryDB.deleteDirPath(folderPath)
+                    } catch (ignored: Exception) {
+                    }
+                }
+                PendingRemovals.remove(folderPath)
+            }
+
+            if (failedCount > 0) {
+                Handler(Looper.getMainLooper()).post {
+                    appContext.toast(org.fossify.commons.R.string.unknown_error_occurred)
+                    if (!isDestroyed && !isFinishing) {
+                        getMedia()
+                    }
+                }
+            }
+        }.start()
+
+        if (mMedia.none { it is Medium }) {
+            if (mPath == FAVORITES) {
+                ensureBackgroundThread {
+                    directoryDB.deleteDirPath(FAVORITES)
+                }
+            }
+            finish()
+        }
+    }
+
+    private fun deleteFilesLegacy(filtered: ArrayList<FileDirItem>, toRecycleBin: Boolean) {
+        if (toRecycleBin) {
             val movingItems = resources.getQuantityString(
                 org.fossify.commons.R.plurals.moving_items_into_bin,
                 filtered.size,
@@ -1093,7 +1204,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 }
             }
 
-            if (mMedia.isEmpty()) {
+            if (mMedia.none { it is Medium }) {
                 deleteDirectoryIfEmpty()
                 deleteDBDirectory()
                 finish()

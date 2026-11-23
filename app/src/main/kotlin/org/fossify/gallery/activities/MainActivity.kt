@@ -88,6 +88,7 @@ import org.fossify.gallery.dialogs.GrantAllFilesDialog
 import org.fossify.gallery.extensions.addTempFolderIfNeeded
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.createDirectoryFromMedia
+import org.fossify.gallery.extensions.createDirectoryFromSummary
 import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.getCachedDirectories
 import org.fossify.gallery.extensions.getCachedMedia
@@ -126,6 +127,8 @@ import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MONTH_MILLISECONDS
 import org.fossify.gallery.helpers.MediaFetcher
+import org.fossify.gallery.helpers.FastScanner
+import org.fossify.gallery.helpers.PendingRemovals
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
@@ -156,7 +159,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     companion object {
         private const val PICK_MEDIA = 2
         private const val PICK_WALLPAPER = 3
-        private const val LAST_MEDIA_CHECK_PERIOD = 3000L
     }
 
     private var mIsPickImageIntent = false
@@ -174,6 +176,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private var mWasMediaManagementPromptShown = false
     private var mLatestMediaId = 0L
     private var mLatestMediaDateId = 0L
+    private var mForceFullScan = false
+    private var mReloadRequested = false
 
     // used at "Group direct subfolders" for navigation
     private var mCurrentPathPrefix = ""
@@ -234,7 +238,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             padBottomImeAndSystem = listOf(binding.directoriesGrid)
         )
 
-        binding.directoriesRefreshLayout.setOnRefreshListener { getDirectories() }
+        binding.directoriesRefreshLayout.setOnRefreshListener {
+            // pulling down re-checks every folder and file, not just the ones whose timestamps changed
+            mForceFullScan = true
+            getDirectories()
+        }
         storeStateVariables()
         checkWhatsNewDialog()
         setupLatestMediaId()
@@ -290,6 +298,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     override fun onResume() {
         super.onResume()
+        FastScanner.onForeground(this)
+        FastScanner.addChangeListener(this) { onStorageChanged() }
         updateMenuColors()
         config.isThirdPartyIntent = false
         mDateFormat = config.dateFormat
@@ -353,6 +363,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     override fun onPause() {
         super.onPause()
+        FastScanner.removeChangeListener(this)
+        FastScanner.onBackground()
         binding.directoriesRefreshLayout.isRefreshing = false
         mIsGettingDirs = false
         storeStateVariables()
@@ -622,8 +634,21 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
+    // a folder, photo or album was added, removed or changed: files, other apps or MediaStore
+    private fun onStorageChanged() {
+        if (isDestroyed || isFinishing || config.showAll || binding.mainMenu.isSearchOpen) {
+            return
+        }
+
+        if (hasAllPermissions(getPermissionsToRequest())) {
+            getDirectories()
+        }
+    }
+
     private fun getDirectories() {
         if (mIsGettingDirs) {
+            // do not lose the change, load again as soon as the current load finished
+            mReloadRequested = true
             return
         }
 
@@ -1115,13 +1140,28 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         var isPlaceholderVisible = dirs.isEmpty()
 
-        runOnUiThread {
-            checkPlaceholderVisibility(dirs)
-            setupAdapter(dirs.clone() as ArrayList<Directory>)
+        val fastScan = FastScanner.isEnabled(this)
+
+        // the cached list is only for the first paint, on later reloads the fast scan result comes in a moment
+        // and showing stale cached folders first would make removed albums flash up again
+        if (!fastScan || !mLoadedInitialPhotos) {
+            runOnUiThread {
+                checkPlaceholderVisibility(dirs)
+                setupAdapter(dirs.clone() as ArrayList<Directory>)
+            }
         }
 
         // cached folders have been loaded, recheck folders one by one starting with the first displayed
         mLastMediaFetcher?.shouldStop = true
+        if (fastScan) {
+            try {
+                updateDirectoriesNative(dirs)
+                return
+            } catch (e: Exception) {
+                // fall back to the MediaStore based scan below
+            }
+        }
+
         mLastMediaFetcher = MediaFetcher(applicationContext)
         val getImages = mIsPickImageIntent || mIsGetImageContentIntent
         val getVideos = mIsPickVideoIntent || mIsGetVideoContentIntent
@@ -1269,7 +1309,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                                 }
                             }
                         }
-                        mediaDB.deleteMedia(*mediaToDelete.toTypedArray())
+                        mediaToDelete.forEach { mediaDB.deleteMediumPath(it.path) }
                     }
                 }
             }
@@ -1408,6 +1448,144 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         mDirs = dirs.clone() as ArrayList<Directory>
+    }
+
+    // Rust scanner flow: one native walk (finds hidden / .nomedia trees MediaStore never indexes),
+    // folder summaries computed natively, no per-file work on the Kotlin side.
+    private fun updateDirectoriesNative(cachedDirs: ArrayList<Directory>) {
+        val forceFull = mForceFullScan
+        mForceFullScan = false
+        val getImages = mIsPickImageIntent || mIsGetImageContentIntent
+        val getVideos = mIsPickVideoIntent || mIsGetVideoContentIntent
+        val getImagesOnly = getImages && !getVideos
+        val getVideosOnly = getVideos && !getImages
+        val hiddenString = getString(R.string.hidden)
+        val albumCovers = config.parseAlbumCovers()
+        val getProperFileSize = config.directorySorting and SORT_BY_SIZE != 0
+        val tempFolderPath = config.tempFolderPath
+
+        FastScanner.refresh(this, forceFull)
+        if (isDestroyed || isFinishing) {
+            return
+        }
+
+        val newDirs = ArrayList<Directory>()
+        FastScanner.getSummaries(this, getImagesOnly, getVideosOnly).forEach { summary ->
+            if (!PendingRemovals.contains(summary.path)) {
+                newDirs.add(createDirectoryFromSummary(summary, albumCovers, hiddenString, getProperFileSize))
+            }
+        }
+
+        // Favorites and the Recycle bin live in the database, use the regular loader for them
+        val fetcher = MediaFetcher(applicationContext)
+        mLastMediaFetcher = fetcher
+        val favoritePaths = getFavoritePaths()
+        val includedFolders = config.includedFolders
+        val noMediaFolders = getNoMediaFoldersSync()
+        val dateTakens = fetcher.getDateTakens()
+        val specialPaths = arrayListOf(FAVORITES)
+        if (config.showRecycleBinAtFolders) {
+            specialPaths.add(RECYCLE_BIN)
+        }
+
+        for (special in specialPaths) {
+            val specialMedia = fetcher.getFilesFrom(
+                curPath = special,
+                isPickImage = getImagesOnly,
+                isPickVideo = getVideosOnly,
+                getProperDateTaken = true,
+                getProperLastModified = true,
+                getProperFileSize = getProperFileSize,
+                favoritePaths = favoritePaths,
+                getVideoDurations = false,
+                lastModifieds = HashMap(),
+                dateTakens = dateTakens,
+                android11Files = null
+            )
+
+            if (specialMedia.isEmpty()) {
+                continue
+            }
+
+            val specialDir = createDirectoryFromMedia(
+                path = special,
+                curMedia = specialMedia,
+                albumCovers = albumCovers,
+                hiddenString = hiddenString,
+                includedFolders = includedFolders,
+                getProperFileSize = getProperFileSize,
+                noMediaFolders = noMediaFolders
+            )
+
+            val hideFavorites = special == FAVORITES
+                    && !config.shouldShowHidden
+                    && specialDir.tmb.getFilenameFromPath().startsWith('.')
+            if (!hideFavorites) {
+                newDirs.add(specialDir)
+            }
+        }
+
+        if (tempFolderPath.isNotEmpty() && newDirs.none { it.path == tempFolderPath }) {
+            cachedDirs.firstOrNull { it.path == tempFolderPath }?.let { newDirs.add(it) }
+        }
+
+        mLoadedInitialPhotos = true
+        setupAdapter(newDirs)
+        runOnUiThread {
+            binding.directoriesRefreshLayout.isRefreshing = false
+            checkPlaceholderVisibility(newDirs)
+        }
+
+        val cachedByPath = cachedDirs.associateBy { it.path }
+        val newPaths = newDirs.map { it.path }.toHashSet()
+        val changedDirs = newDirs.filter {
+            cachedByPath[it.path]?.copy(subfoldersCount = 0, subfoldersMediaCount = 0) != it
+        }
+        val removedDirs = cachedDirs.filter { it.path !in newPaths && it.path != tempFolderPath }
+        Thread {
+            try {
+                if (changedDirs.isNotEmpty()) {
+                    directoryDB.insertAll(changedDirs)
+                }
+                removedDirs.forEach { directoryDB.deleteDirPath(it.path) }
+            } catch (ignored: Exception) {
+            }
+        }.start()
+
+        val excludedFolders = config.excludedFolders
+        val everShownFolders = config.everShownFolders.toMutableSet() as HashSet<String>
+        newDirs.filter { dir ->
+            !excludedFolders.any { dir.path.startsWith(it) }
+        }.mapTo(everShownFolders) { it.path }
+
+        try {
+            config.everShownFolders = everShownFolders
+        } catch (e: Exception) {
+            config.everShownFolders = HashSet()
+        }
+
+        mDirs = newDirs.clone() as ArrayList<Directory>
+        if (config.appRunCount > 1) {
+            checkLastMediaChanged()
+        }
+
+        if (mDirs.size > 50) {
+            excludeSpamFolders()
+        }
+
+        if (mReloadRequested) {
+            mReloadRequested = false
+            runOnUiThread { getDirectories() }
+        }
+
+        // MediaStore knows the EXIF date taken of indexed files, pull it in the background now and then
+        val appContext = applicationContext
+        Thread {
+            val changed = FastScanner.syncDateTakens(appContext, forceFull)
+            if (changed > 0 && !isDestroyed && !isFinishing) {
+                runOnUiThread { getDirectories() }
+            }
+        }.start()
     }
 
     private fun setAsDefaultFolder() {
@@ -1621,9 +1799,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         mLastMediaHandler.postDelayed({
             ensureBackgroundThread {
+                // MediaStore never reports hidden folders, the native check compares folder timestamps instead
+                val nativeChanged = FastScanner.isEnabled(this) && FastScanner.hasChanges(this)
                 val mediaId = getLatestMediaId()
                 val mediaDateId = getLatestMediaByDateId()
-                if (mLatestMediaId != mediaId || mLatestMediaDateId != mediaDateId) {
+                if (nativeChanged || mLatestMediaId != mediaId || mLatestMediaDateId != mediaDateId) {
                     mLatestMediaId = mediaId
                     mLatestMediaDateId = mediaDateId
                     runOnUiThread {
@@ -1634,7 +1814,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     checkLastMediaChanged()
                 }
             }
-        }, LAST_MEDIA_CHECK_PERIOD)
+        }, FastScanner.getPollPeriod(this))
     }
 
     private fun checkRecycleBinItems() {

@@ -36,6 +36,16 @@ class MediaFetcher(val context: Context) {
             return ArrayList()
         }
 
+        if (curPath != FAVORITES && curPath != RECYCLE_BIN && !context.isPathOnOTG(curPath) && FastScanner.isEnabled(context)) {
+            try {
+                return getFilesFromNative(
+                    curPath, isPickImage, isPickVideo, getProperDateTaken, getProperFileSize,
+                    favoritePaths, getVideoDurations, dateTakens
+                )
+            } catch (ignored: Exception) {
+            }
+        }
+
         val curMedia = ArrayList<Medium>()
         if (context.isPathOnOTG(curPath)) {
             if (context.hasOTGConnected()) {
@@ -81,7 +91,44 @@ class MediaFetcher(val context: Context) {
         return curMedia
     }
 
+    private fun getFilesFromNative(
+        curPath: String, isPickImage: Boolean, isPickVideo: Boolean, getProperDateTaken: Boolean, getProperFileSize: Boolean,
+        favoritePaths: ArrayList<String>, getVideoDurations: Boolean, dateTakens: HashMap<String, Long>
+    ): ArrayList<Medium> {
+        FastScanner.refreshDir(context, curPath)
+        val media = FastScanner.getFolderMedia(context, curPath, isPickImage, isPickVideo, getProperFileSize)
+        val favorites = if (favoritePaths.isEmpty()) null else favoritePaths.toHashSet()
+        for (medium in media) {
+            if (shouldStop) {
+                break
+            }
+
+            if (favorites != null && favorites.contains(medium.path)) {
+                medium.isFavorite = true
+            }
+
+            if (getProperDateTaken) {
+                dateTakens[medium.path]?.let { medium.taken = it }
+            }
+
+            if (getVideoDurations && medium.isVideo()) {
+                medium.videoDuration = context.getDuration(medium.path) ?: 0
+            }
+        }
+
+        sortMedia(media, context.config.getFolderSorting(curPath))
+        return media
+    }
+
     fun getFoldersToScan(): ArrayList<String> {
+        if (FastScanner.isEnabled(context)) {
+            try {
+                FastScanner.refreshIfStale(context)
+                return FastScanner.getVisibleFolders(context)
+            } catch (ignored: Exception) {
+            }
+        }
+
         return try {
             val OTGPath = context.config.OTGPath
             val folders = getLatestFileFolders()
@@ -610,7 +657,7 @@ class MediaFetcher(val context: Context) {
 
     fun getFolderDateTakens(folder: String): HashMap<String, Long> {
         val dateTakens = HashMap<String, Long>()
-        if (folder != FAVORITES) {
+        if (folder != FAVORITES && !FastScanner.isEnabled(context)) {
             val projection = arrayOf(
                 Images.Media.DISPLAY_NAME,
                 Images.Media.DATE_TAKEN
@@ -651,6 +698,17 @@ class MediaFetcher(val context: Context) {
 
     fun getDateTakens(): HashMap<String, Long> {
         val dateTakens = HashMap<String, Long>()
+        if (FastScanner.isEnabled(context)) {
+            // the native index keeps MediaStore values, only the own database has to be applied on top
+            try {
+                context.dateTakensDB.getAllDateTakens().forEach {
+                    dateTakens[it.fullPath] = it.taken
+                }
+            } catch (ignored: Exception) {
+            }
+            return dateTakens
+        }
+
         val projection = arrayOf(
             Images.Media.DATA,
             Images.Media.DATE_TAKEN
@@ -683,7 +741,7 @@ class MediaFetcher(val context: Context) {
 
     fun getFolderLastModifieds(folder: String): HashMap<String, Long> {
         val lastModifieds = HashMap<String, Long>()
-        if (folder != FAVORITES) {
+        if (folder != FAVORITES && !FastScanner.isEnabled(context)) {
             val projection = arrayOf(
                 Images.Media.DISPLAY_NAME,
                 Images.Media.DATE_MODIFIED
@@ -710,6 +768,10 @@ class MediaFetcher(val context: Context) {
 
     fun getLastModifieds(): HashMap<String, Long> {
         val lastModifieds = HashMap<String, Long>()
+        if (FastScanner.isEnabled(context)) {
+            return lastModifieds
+        }
+
         val projection = arrayOf(
             Images.Media.DATA,
             Images.Media.DATE_MODIFIED
