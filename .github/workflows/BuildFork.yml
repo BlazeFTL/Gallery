@@ -1,0 +1,110 @@
+name: Build APK
+
+on:
+    workflow_dispatch:
+        inputs:
+            flavor:
+                description: "Flavor"
+                type: choice
+                default: foss
+                options:
+                    - foss
+                    - gplay
+            build_type:
+                description: "Build type (release is signed with a stable CI key, debug installs as a separate .debug app)"
+                type: choice
+                default: release
+                options:
+                    - release
+                    - debug
+            publish_release:
+                description: "Also publish the APK as a pre-release (direct, unzipped download)"
+                type: boolean
+                default: true
+
+permissions:
+    contents: write
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Set up JDK
+              uses: actions/setup-java@v4
+              with:
+                  distribution: temurin
+                  java-version: 21
+
+            - name: Set up Gradle
+              uses: gradle/actions/setup-gradle@v4
+
+            - name: Restore CI signing key
+              if: inputs.build_type == 'release'
+              id: key-cache
+              uses: actions/cache@v4
+              with:
+                  path: ~/ci-keystore
+                  key: ci-keystore-v1
+
+            - name: Create CI signing key
+              if: inputs.build_type == 'release' && steps.key-cache.outputs.cache-hit != 'true'
+              run: |
+                  mkdir -p ~/ci-keystore
+                  keytool -genkeypair -keystore ~/ci-keystore/ci.keystore \
+                      -storepass android-ci -keypass android-ci -alias ci \
+                      -keyalg RSA -keysize 2048 -validity 10000 \
+                      -dname "CN=Gallery CI, O=Fork, C=US"
+
+            - name: Build APK
+              env:
+                  FLAVOR: ${{ inputs.flavor }}
+                  BUILD_TYPE: ${{ inputs.build_type }}
+              run: |
+                  if [ "$BUILD_TYPE" = "release" ]; then
+                      export SIGNING_STORE_FILE="$HOME/ci-keystore/ci.keystore"
+                      export SIGNING_STORE_PASSWORD=android-ci
+                      export SIGNING_KEY_ALIAS=ci
+                      export SIGNING_KEY_PASSWORD=android-ci
+                  fi
+                  flavor_cap="$(tr '[:lower:]' '[:upper:]' <<< "${FLAVOR:0:1}")${FLAVOR:1}"
+                  type_cap="$(tr '[:lower:]' '[:upper:]' <<< "${BUILD_TYPE:0:1}")${BUILD_TYPE:1}"
+                  chmod +x ./gradlew
+                  ./gradlew --stacktrace ":app:assemble${flavor_cap}${type_cap}"
+
+            - name: Collect APK
+              id: apk
+              run: |
+                  apk="$(find app/build/outputs/apk -name '*.apk' | head -n 1)"
+                  if [ -z "$apk" ]; then
+                      echo "No APK produced" >&2
+                      exit 1
+                  fi
+                  mkdir -p dist
+                  name="Gallery-${{ inputs.flavor }}-${{ inputs.build_type }}-${{ github.run_number }}.apk"
+                  cp "$apk" "dist/$name"
+                  echo "path=dist/$name" >> "$GITHUB_OUTPUT"
+                  echo "name=$name" >> "$GITHUB_OUTPUT"
+                  ls -lh dist
+
+            - name: Upload APK artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ steps.apk.outputs.name }}
+                  path: ${{ steps.apk.outputs.path }}
+                  compression-level: 0
+                  if-no-files-found: error
+
+            - name: Publish pre-release
+              if: inputs.publish_release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  gh release create "build-${{ github.run_number }}" "${{ steps.apk.outputs.path }}" \
+                      --target "${{ github.sha }}" \
+                      --prerelease \
+                      --title "Build ${{ github.run_number }} (${{ inputs.flavor }} ${{ inputs.build_type }})" \
+                      --notes "Built from ${{ github.sha }} on ${{ github.ref_name }}."
