@@ -9,6 +9,7 @@ import org.fossify.commons.helpers.VIEW_TYPE_LIST
 import org.fossify.gallery.databinding.DialogChangeViewTypeBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.SHOW_ALL
+import org.fossify.gallery.extensions.applyExpressiveDialogTiles
 
 class ChangeViewTypeDialog(val activity: BaseSimpleActivity, val fromFoldersView: Boolean, val path: String = "", val callback: () -> Unit) {
     private val binding = DialogChangeViewTypeBinding.inflate(activity.layoutInflater)
@@ -48,6 +49,7 @@ class ChangeViewTypeDialog(val activity: BaseSimpleActivity, val fromFoldersView
             .setPositiveButton(org.fossify.commons.R.string.ok) { dialog, which -> dialogConfirmed() }
             .setNegativeButton(org.fossify.commons.R.string.cancel, null)
             .apply {
+                binding.root.applyExpressiveDialogTiles()
                 activity.setupDialogStuff(binding.root, this)
             }
     }

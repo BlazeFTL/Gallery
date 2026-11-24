@@ -96,6 +96,7 @@ import org.fossify.gallery.interfaces.PlaybackSpeedListener
 import java.text.DecimalFormat
 import kotlin.math.max
 import kotlin.math.min
+import org.fossify.gallery.extensions.applyExpressiveDarkMenu
 
 open class VideoPlayerActivity : BaseViewerActivity(), SeekBar.OnSeekBarChangeListener,
     TextureView.SurfaceTextureListener, PlaybackSpeedListener {
@@ -215,6 +216,7 @@ open class VideoPlayerActivity : BaseViewerActivity(), SeekBar.OnSeekBarChangeLi
         }
 
         updateMenuItemColors(binding.videoToolbar.menu, forceWhiteIcons = true)
+        binding.videoToolbar.applyExpressiveDarkMenu()
         binding.videoToolbar.setOnMenuItemClickListener { menuItem ->
             when (menuItem.itemId) {
                 R.id.menu_force_portrait -> toggleOrientation(SCREEN_ORIENTATION_PORTRAIT)

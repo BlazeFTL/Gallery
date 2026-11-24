@@ -29,12 +29,15 @@
         <menu>
             <item
                 android:id="@+id/cab_rotate_right"
+        android:icon="@drawable/ic_rotate_right_vector"
                 android:title="@string/rotate_right" />
             <item
                 android:id="@+id/cab_rotate_left"
+        android:icon="@drawable/ic_menu_rotate_left"
                 android:title="@string/rotate_left" />
             <item
                 android:id="@+id/cab_rotate_one_eighty"
+        android:icon="@drawable/ic_menu_rotate_180"
                 android:title="@string/rotate_one_eighty" />
         </menu>
     </item>
@@ -45,6 +48,7 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/cab_rename"
+        android:icon="@drawable/ic_rename_vector"
         android:title="@string/rename"
         app:showAsAction="never" />
     <item
@@ -59,31 +63,37 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/cab_copy_to"
+        android:icon="@drawable/ic_menu_file_copy"
         android:showAsAction="never"
         android:title="@string/copy_to"
         app:showAsAction="never" />
     <item
         android:id="@+id/cab_move_to"
+        android:icon="@drawable/ic_move_vector"
         android:showAsAction="never"
         android:title="@string/move_to"
         app:showAsAction="never" />
     <item
         android:id="@+id/cab_create_shortcut"
+        android:icon="@drawable/ic_menu_shortcut"
         android:showAsAction="never"
         android:title="@string/create_shortcut"
         app:showAsAction="never" />
     <item
         android:id="@+id/cab_open_with"
+        android:icon="@drawable/ic_menu_open_with"
         android:showAsAction="never"
         android:title="@string/open_with"
         app:showAsAction="never" />
     <item
         android:id="@+id/cab_set_as"
+        android:icon="@drawable/ic_set_as_vector"
         android:showAsAction="never"
         android:title="@string/set_as"
         app:showAsAction="never" />
     <item
         android:id="@+id/cab_resize"
+        android:icon="@drawable/ic_menu_resize"
         android:showAsAction="never"
         android:title="@string/resize"
         app:showAsAction="never" />
@@ -104,11 +114,13 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/cab_restore_recycle_bin_files"
+        android:icon="@drawable/ic_menu_restore"
         android:showAsAction="never"
         android:title="@string/restore_selected_files"
         app:showAsAction="never" />
     <item
         android:id="@+id/cab_fix_date_taken"
+        android:icon="@drawable/ic_menu_fix_date"
         android:showAsAction="never"
         android:title="@string/fix_date_taken"
         app:showAsAction="never" />

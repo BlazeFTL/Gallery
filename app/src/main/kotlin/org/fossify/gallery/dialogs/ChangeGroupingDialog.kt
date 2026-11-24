@@ -9,6 +9,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogChangeGroupingBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.*
+import org.fossify.gallery.extensions.applyExpressiveDialogTiles
 
 class ChangeGroupingDialog(val activity: BaseSimpleActivity, val path: String = "", val callback: () -> Unit) :
     DialogInterface.OnClickListener {
@@ -28,6 +29,7 @@ class ChangeGroupingDialog(val activity: BaseSimpleActivity, val path: String = 
             .setPositiveButton(org.fossify.commons.R.string.ok, this)
             .setNegativeButton(org.fossify.commons.R.string.cancel, null)
             .apply {
+                binding.root.applyExpressiveDialogTiles()
                 activity.setupDialogStuff(binding.root, this, R.string.group_by)
             }
 

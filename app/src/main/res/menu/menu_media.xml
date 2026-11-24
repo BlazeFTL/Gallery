@@ -25,36 +25,43 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/change_view_type"
+        android:icon="@drawable/ic_menu_grid_view"
         android:showAsAction="never"
         android:title="@string/change_view_type"
         app:showAsAction="never" />
     <item
         android:id="@+id/temporarily_show_hidden"
+        android:icon="@drawable/ic_unhide_vector"
         android:showAsAction="never"
         android:title="@string/temporarily_show_hidden"
         app:showAsAction="never" />
     <item
         android:id="@+id/stop_showing_hidden"
+        android:icon="@drawable/ic_hide_vector"
         android:showAsAction="never"
         android:title="@string/stop_showing_hidden"
         app:showAsAction="never" />
     <item
         android:id="@+id/empty_recycle_bin"
+        android:icon="@drawable/ic_menu_delete_sweep"
         android:showAsAction="never"
         android:title="@string/empty_recycle_bin"
         app:showAsAction="never" />
     <item
         android:id="@+id/empty_disable_recycle_bin"
+        android:icon="@drawable/ic_menu_delete_forever"
         android:showAsAction="never"
         android:title="@string/empty_and_disable_recycle_bin"
         app:showAsAction="never" />
     <item
         android:id="@+id/open_recycle_bin"
+        android:icon="@drawable/ic_menu_recycle"
         android:showAsAction="never"
         android:title="@string/open_the_recycle_bin"
         app:showAsAction="never" />
     <item
         android:id="@+id/restore_all_files"
+        android:icon="@drawable/ic_menu_restore"
         android:showAsAction="never"
         android:title="@string/restore_all_files"
         app:showAsAction="never" />
@@ -65,21 +72,25 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/group"
+        android:icon="@drawable/ic_menu_group"
         android:showAsAction="never"
         android:title="@string/group_by"
         app:showAsAction="never" />
     <item
         android:id="@+id/set_as_default_folder"
+        android:icon="@drawable/ic_menu_bookmark"
         android:showAsAction="never"
         android:title="@string/set_as_default_folder"
         app:showAsAction="never" />
     <item
         android:id="@+id/unset_as_default_folder"
+        android:icon="@drawable/ic_menu_bookmark_remove"
         android:showAsAction="never"
         android:title="@string/unset_as_default_folder"
         app:showAsAction="never" />
     <item
         android:id="@+id/create_new_folder"
+        android:icon="@drawable/ic_menu_create_folder"
         android:showAsAction="never"
         android:title="@string/create_new_folder"
         app:showAsAction="never" />
@@ -90,6 +101,7 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/slideshow"
+        android:icon="@drawable/ic_slideshow_vector"
         android:showAsAction="never"
         android:title="@string/slideshow"
         app:showAsAction="never" />

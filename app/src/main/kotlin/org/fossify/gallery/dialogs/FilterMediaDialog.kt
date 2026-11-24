@@ -7,6 +7,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogFilterMediaBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.*
+import org.fossify.gallery.extensions.applyExpressiveDialogTiles
 
 class FilterMediaDialog(val activity: BaseSimpleActivity, val callback: (result: Int) -> Unit) {
     private val binding = DialogFilterMediaBinding.inflate(activity.layoutInflater)
@@ -26,6 +27,7 @@ class FilterMediaDialog(val activity: BaseSimpleActivity, val callback: (result:
             .setPositiveButton(org.fossify.commons.R.string.ok) { dialog, which -> dialogConfirmed() }
             .setNegativeButton(org.fossify.commons.R.string.cancel, null)
             .apply {
+                binding.root.applyExpressiveDialogTiles()
                 activity.setupDialogStuff(binding.root, this, R.string.filter_media)
             }
     }

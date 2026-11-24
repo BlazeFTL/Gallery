@@ -8,6 +8,7 @@
         app:showAsAction="always" />
     <item
         android:id="@+id/allow_changing_aspect_ratio"
+        android:icon="@drawable/ic_aspect_ratio_vector"
         android:title="@string/allow_changing_aspect_ratio"
         app:showAsAction="never" />
 </menu>

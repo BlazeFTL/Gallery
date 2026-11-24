@@ -76,6 +76,7 @@ import org.fossify.gallery.helpers.TYPE_SVGS
 import org.fossify.gallery.helpers.TYPE_VIDEOS
 import org.fossify.gallery.models.Medium
 import java.io.File
+import org.fossify.gallery.extensions.applyExpressiveDarkMenu
 
 open class PhotoVideoActivity : BaseViewerActivity(), ViewPagerFragment.FragmentListener {
     private var mMedium: Medium? = null
@@ -144,6 +145,7 @@ open class PhotoVideoActivity : BaseViewerActivity(), ViewPagerFragment.Fragment
         }
 
         updateMenuItemColors(binding.fragmentViewerToolbar.menu, forceWhiteIcons = true)
+        binding.fragmentViewerToolbar.applyExpressiveDarkMenu()
         binding.fragmentViewerToolbar.setOnMenuItemClickListener { menuItem ->
             if (mMedium == null || mUri == null) {
                 return@setOnMenuItemClickListener true

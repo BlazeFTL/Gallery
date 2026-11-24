@@ -37,4 +37,5 @@
     <dimen name="expressive_card_radius_selected">28dp</dimen>
     <dimen name="expressive_floating_height">56dp</dimen>
     <dimen name="expressive_floating_margin">16dp</dimen>
+    <dimen name="expressive_menu_item_height">52dp</dimen>
 </resources>

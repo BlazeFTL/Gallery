@@ -182,6 +182,7 @@ import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import java.io.File
 import kotlin.math.min
+import org.fossify.gallery.extensions.applyExpressiveDarkMenu
 
 @Suppress("UNCHECKED_CAST")
 class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, ViewPagerFragment.FragmentListener {
@@ -341,6 +342,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
 
         updateMenuItemColors(binding.mediumViewerToolbar.menu, forceWhiteIcons = true)
+        binding.mediumViewerToolbar.applyExpressiveDarkMenu()
         binding.mediumViewerToolbar.setOnMenuItemClickListener { menuItem ->
             if (getCurrentMedium() == null) {
                 return@setOnMenuItemClickListener true

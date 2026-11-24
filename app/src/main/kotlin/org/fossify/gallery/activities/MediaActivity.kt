@@ -115,6 +115,7 @@ import org.fossify.gallery.models.ThumbnailItem
 import org.fossify.gallery.models.ThumbnailSection
 import java.io.File
 import java.io.IOException
+import org.fossify.gallery.extensions.enableExpressiveIcons
 
 class MediaActivity : SimpleActivity(), MediaOperationsListener {
     override var isSearchBarEnabled = true
@@ -367,6 +368,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
     private fun setupOptionsMenu() {
         binding.mediaMenu.requireToolbar().inflateMenu(R.menu.menu_media)
+        binding.mediaMenu.requireToolbar().menu.enableExpressiveIcons(this)
         binding.mediaMenu.toggleHideOnScroll(!config.scrollHorizontally)
         binding.mediaMenu.setupMenu()
 

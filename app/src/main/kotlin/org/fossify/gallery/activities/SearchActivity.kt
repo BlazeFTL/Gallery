@@ -62,6 +62,7 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
 
     private fun setupOptionsMenu() {
         binding.searchMenu.requireToolbar().inflateMenu(R.menu.menu_search)
+        binding.searchMenu.requireToolbar().menu.enableExpressiveIcons(this)
         binding.searchMenu.toggleHideOnScroll(true)
         binding.searchMenu.setupMenu()
         binding.searchMenu.toggleForceArrowBackIcon(true)

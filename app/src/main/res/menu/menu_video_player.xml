@@ -5,20 +5,25 @@
     tools:ignore="AppCompatResource">
     <item
         android:id="@+id/menu_change_orientation"
+        android:icon="@drawable/ic_orientation_auto_vector"
         android:title="@string/change_orientation"
         app:showAsAction="never">
         <menu>
             <item
                 android:id="@+id/menu_force_portrait"
+        android:icon="@drawable/ic_orientation_portrait_vector"
                 android:title="@string/force_portrait" />
             <item
                 android:id="@+id/menu_force_landscape"
+        android:icon="@drawable/ic_orientation_landscape_vector"
                 android:title="@string/force_landscape" />
             <item
                 android:id="@+id/menu_force_landscape_reverse"
+        android:icon="@drawable/ic_orientation_landscape_vector"
                 android:title="@string/force_landscape_reverse" />
             <item
                 android:id="@+id/menu_default_orientation"
+        android:icon="@drawable/ic_orientation_auto_vector"
                 android:title="@string/use_default_orientation" />
         </menu>
     </item>
@@ -29,6 +34,7 @@
         app:showAsAction="always" />
     <item
         android:id="@+id/menu_open_with"
+        android:icon="@drawable/ic_menu_open_with"
         android:showAsAction="never"
         android:title="@string/open_with"
         app:showAsAction="never" />

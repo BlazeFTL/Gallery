@@ -27,12 +27,15 @@
         <menu>
             <item
                 android:id="@+id/menu_rotate_right"
+        android:icon="@drawable/ic_rotate_right_vector"
                 android:title="@string/rotate_right" />
             <item
                 android:id="@+id/menu_rotate_left"
+        android:icon="@drawable/ic_menu_rotate_left"
                 android:title="@string/rotate_left" />
             <item
                 android:id="@+id/menu_rotate_one_eighty"
+        android:icon="@drawable/ic_menu_rotate_180"
                 android:title="@string/rotate_one_eighty" />
         </menu>
     </item>
@@ -43,6 +46,7 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/menu_rename"
+        android:icon="@drawable/ic_rename_vector"
         android:title="@string/rename"
         app:showAsAction="never" />
     <item
@@ -57,26 +61,31 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/menu_copy_to_clipboard"
+        android:icon="@drawable/ic_copy_vector"
         android:showAsAction="never"
         android:title="@string/copy_to_clipboard"
         app:showAsAction="never" />
     <item
         android:id="@+id/menu_copy_to"
+        android:icon="@drawable/ic_menu_file_copy"
         android:showAsAction="never"
         android:title="@string/copy_to"
         app:showAsAction="never" />
     <item
         android:id="@+id/menu_move_to"
+        android:icon="@drawable/ic_move_vector"
         android:showAsAction="never"
         android:title="@string/move_to"
         app:showAsAction="never" />
     <item
         android:id="@+id/menu_create_shortcut"
+        android:icon="@drawable/ic_menu_shortcut"
         android:showAsAction="never"
         android:title="@string/create_shortcut"
         app:showAsAction="never" />
     <item
         android:id="@+id/menu_open_with"
+        android:icon="@drawable/ic_menu_open_with"
         android:showAsAction="never"
         android:title="@string/open_with"
         app:showAsAction="never" />
@@ -102,40 +111,49 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/menu_restore_file"
+        android:icon="@drawable/ic_menu_restore"
         android:showAsAction="never"
         android:title="@string/restore_this_file"
         app:showAsAction="never" />
     <item
         android:id="@+id/menu_change_orientation"
+        android:icon="@drawable/ic_orientation_auto_vector"
         android:title="@string/change_orientation"
         app:showAsAction="never">
         <menu>
             <item
                 android:id="@+id/menu_force_portrait"
+        android:icon="@drawable/ic_orientation_portrait_vector"
                 android:title="@string/force_portrait" />
             <item
                 android:id="@+id/menu_force_landscape"
+        android:icon="@drawable/ic_orientation_landscape_vector"
                 android:title="@string/force_landscape" />
             <item
                 android:id="@+id/menu_force_landscape_reverse"
+        android:icon="@drawable/ic_orientation_landscape_vector"
                 android:title="@string/force_landscape_reverse" />
             <item
                 android:id="@+id/menu_default_orientation"
+        android:icon="@drawable/ic_orientation_auto_vector"
                 android:title="@string/use_default_orientation" />
         </menu>
     </item>
     <item
         android:id="@+id/menu_print"
+        android:icon="@drawable/ic_menu_print"
         android:showAsAction="never"
         android:title="@string/print"
         app:showAsAction="never" />
     <item
         android:id="@+id/menu_resize"
+        android:icon="@drawable/ic_menu_resize"
         android:showAsAction="never"
         android:title="@string/resize"
         app:showAsAction="never" />
     <item
         android:id="@+id/menu_show_on_map"
+        android:icon="@drawable/ic_place_vector"
         android:showAsAction="never"
         android:title="@string/show_on_map"
         app:showAsAction="never" />

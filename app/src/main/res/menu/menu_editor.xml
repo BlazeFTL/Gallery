@@ -8,7 +8,7 @@
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/overwrite_original"
-        android:icon="@drawable/ic_check_vector"
+        android:icon="@drawable/ic_menu_save"
         android:title="@string/overwrite_original"
         app:showAsAction="never" />
     <item

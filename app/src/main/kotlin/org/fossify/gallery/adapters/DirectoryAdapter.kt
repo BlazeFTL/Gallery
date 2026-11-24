@@ -109,6 +109,7 @@ import org.fossify.gallery.models.AlbumCover
 import org.fossify.gallery.models.Directory
 import java.io.File
 import java.util.Collections
+import org.fossify.gallery.extensions.enableExpressiveIcons
 
 class DirectoryAdapter(
     activity: BaseSimpleActivity,
@@ -174,6 +175,7 @@ class DirectoryAdapter(
             return
         }
 
+        menu.enableExpressiveIcons(activity, textColor)
         val isOneItemSelected = isOneItemSelected()
         menu.apply {
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping

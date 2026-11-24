@@ -591,6 +591,7 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsAllowRotatingWithGesturesHolder.beVisibleIf(config.allowZoomingImages)
         binding.settingsShowHighestQualityHolder.beVisibleIf(config.allowZoomingImages)
         binding.settingsAllowOneToOneZoomHolder.beVisibleIf(config.allowZoomingImages)
+        binding.settingsHolder.applyExpressiveSettingsGroups()
     }
 
     private fun setupShowHighestQuality() {
@@ -648,6 +649,7 @@ class SettingsActivity : SimpleActivity() {
     private fun updateExtendedDetailsButtons() {
         binding.settingsManageExtendedDetailsHolder.beVisibleIf(config.showExtendedDetails)
         binding.settingsHideExtendedDetailsHolder.beVisibleIf(config.showExtendedDetails)
+        binding.settingsHolder.applyExpressiveSettingsGroups()
     }
 
     private fun setupSkipDeleteConfirmation() {
@@ -689,6 +691,7 @@ class SettingsActivity : SimpleActivity() {
             binding.settingsBottomActionsCheckbox.toggle()
             config.bottomActions = binding.settingsBottomActionsCheckbox.isChecked
             binding.settingsManageBottomActionsHolder.beVisibleIf(config.bottomActions)
+            binding.settingsHolder.applyExpressiveSettingsGroups()
         }
     }
 
@@ -738,6 +741,7 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsShowRecycleBinLastHolder.beVisibleIf(config.useRecycleBin && config.showRecycleBinAtFolders)
         binding.settingsEmptyRecycleBinHolder.beVisibleIf(config.useRecycleBin)
         binding.settingsShowRecycleBinHolder.beVisibleIf(config.useRecycleBin)
+        binding.settingsHolder.applyExpressiveSettingsGroups()
     }
 
     private fun setupEmptyRecycleBin() {

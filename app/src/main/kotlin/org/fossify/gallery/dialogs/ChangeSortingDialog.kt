@@ -21,6 +21,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogChangeSortingBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.SHOW_ALL
+import org.fossify.gallery.extensions.applyExpressiveDialogTiles
 
 class ChangeSortingDialog(
     val activity: BaseSimpleActivity,
@@ -66,6 +67,7 @@ class ChangeSortingDialog(
             .setPositiveButton(org.fossify.commons.R.string.ok, this)
             .setNegativeButton(org.fossify.commons.R.string.cancel, null)
             .apply {
+                binding.root.applyExpressiveDialogTiles()
                 activity.setupDialogStuff(binding.root, this, org.fossify.commons.R.string.sort_by)
             }
 

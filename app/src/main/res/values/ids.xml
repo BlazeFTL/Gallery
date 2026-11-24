@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="expressive_selection_key" type="id" />
+    <item name="expressive_badge" type="id" />
+    <item name="expressive_chevron" type="id" />
 </resources>
