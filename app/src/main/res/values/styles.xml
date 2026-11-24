@@ -16,4 +16,9 @@
     </style>
 
     <style name="FullScreenTheme" parent="FullScreenTheme.Base" />
+
+    <style name="AppTheme.ActionBar.TitleTextStyle">
+        <item name="android:textSize">@dimen/extra_big_text_size</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
 </resources>

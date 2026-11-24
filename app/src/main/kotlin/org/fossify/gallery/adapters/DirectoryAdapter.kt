@@ -84,6 +84,7 @@ import org.fossify.gallery.extensions.isThisOrParentFolderHidden
 import org.fossify.gallery.extensions.loadImage
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.removeNoMedia
+import org.fossify.gallery.extensions.setExpressiveSelected
 import org.fossify.gallery.extensions.showRecycleBinEmptyingDialog
 import org.fossify.gallery.extensions.tryCopyMoveFilesTo
 import org.fossify.gallery.helpers.DIRECTORY
@@ -848,6 +849,22 @@ class DirectoryAdapter(
             if (isSelected) {
                 dirCheck.background?.applyColorFilter(properPrimaryColor)
                 dirCheck.applyColorFilter(contrastColor)
+            }
+
+            if (!isListViewType) {
+                val res = root.context.resources
+                val card = dirHolder.findViewById<View>(R.id.dir_card) ?: dirThumbnail
+                val idleRadius = if (folderStyle == FOLDER_STYLE_SQUARE) {
+                    res.getDimension(R.dimen.expressive_card_radius)
+                } else {
+                    res.getDimension(org.fossify.commons.R.dimen.rounded_corner_radius_big)
+                }
+                card.setExpressiveSelected(
+                    selected = isSelected,
+                    key = directory.path,
+                    idleRadiusPx = idleRadius,
+                    selectedRadiusPx = res.getDimension(R.dimen.expressive_card_radius_selected)
+                )
             }
 
             if (isListViewType) {

@@ -70,6 +70,7 @@ import org.fossify.gallery.extensions.rescanFolderMedia
 import org.fossify.gallery.extensions.restoreRecycleBinPaths
 import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.setAs
+import org.fossify.gallery.extensions.setExpressiveSelected
 import org.fossify.gallery.extensions.shareMediaPaths
 import org.fossify.gallery.extensions.shareMediumPath
 import org.fossify.gallery.extensions.showRestoreConfirmationDialog
@@ -713,6 +714,21 @@ class MediaAdapter(
             if (isSelected) {
                 mediumCheck.background?.applyColorFilter(properPrimaryColor)
                 mediumCheck.applyColorFilter(contrastColor)
+            }
+
+            if (!isListViewType) {
+                val res = root.context.resources
+                val idleRadius = if (config.fileRoundedCorners) {
+                    res.getDimension(org.fossify.commons.R.dimen.rounded_corner_radius_big)
+                } else {
+                    0f
+                }
+                mediumThumbnail.setExpressiveSelected(
+                    selected = isSelected,
+                    key = medium.path,
+                    idleRadiusPx = idleRadius,
+                    selectedRadiusPx = res.getDimension(R.dimen.expressive_card_radius_selected)
+                )
             }
 
             if (isListViewType) {
