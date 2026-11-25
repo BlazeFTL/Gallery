@@ -94,6 +94,7 @@ import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import org.fossify.gallery.models.ThumbnailSection
 import org.fossify.gallery.extensions.enableExpressiveIcons
+import org.fossify.gallery.extensions.installExpressiveActionModeOverflow
 
 class MediaAdapter(
     activity: BaseSimpleActivity,
@@ -189,6 +190,7 @@ class MediaAdapter(
         val selectedPaths = selectedItems.map { it.path } as ArrayList<String>
         val isInRecycleBin = selectedItems.firstOrNull()?.getIsInRecycleBin() == true
         menu.enableExpressiveIcons(activity, textColor)
+        activity.installExpressiveActionModeOverflow(menu)
         menu.apply {
             findItem(R.id.cab_rename).isVisible = !isInRecycleBin
             findItem(R.id.cab_add_to_favorites).isVisible = !isInRecycleBin
