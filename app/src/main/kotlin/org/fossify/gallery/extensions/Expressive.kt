@@ -31,6 +31,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.widget.NestedScrollView
 import com.google.android.material.materialswitch.MaterialSwitch
 import org.fossify.commons.extensions.baseConfig
+import org.fossify.commons.extensions.getDialogBackgroundColor
 import org.fossify.commons.extensions.getProperBackgroundColor
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperTextColor
@@ -69,14 +70,6 @@ private fun Context.getSettingsPalette(colors: ExpressiveColors): Pair<Int, Int>
         Pair(page, bg)
     } else {
         Pair(bg, ColorUtils.blendARGB(bg, primary, 0.12f))
-    }
-}
-
-private fun Context.getDialogTileColor(): Int {
-    return if (isDynamicTheme()) {
-        resources.getColor(org.fossify.commons.R.color.you_background_color, theme)
-    } else {
-        ColorUtils.blendARGB(getProperBackgroundColor(), getProperPrimaryColor(), 0.12f)
     }
 }
 
@@ -231,6 +224,23 @@ fun ViewGroup.applyExpressiveSettingsGroups(colors: ExpressiveColors = context.d
             alpha = 1f
         }
 
+        if (texts.size == 1 && texts[0] !is CompoundButton && (row is RelativeLayout || row is ConstraintLayout)) {
+            row.setPaddingRelative(row.paddingStart, dp(12f), row.paddingEnd, dp(12f))
+            val label = texts[0]
+            when (val lp = label.layoutParams) {
+                is RelativeLayout.LayoutParams -> {
+                    lp.addRule(RelativeLayout.CENTER_VERTICAL)
+                    label.layoutParams = lp
+                }
+
+                is ConstraintLayout.LayoutParams -> {
+                    lp.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                    lp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                    label.layoutParams = lp
+                }
+            }
+        }
+
         val spec = SETTINGS_ROW_SPECS[row.id] ?: return
         if (row !is RelativeLayout && row !is ConstraintLayout) return
 
@@ -316,7 +326,8 @@ fun ViewGroup.applyExpressiveSettingsGroups(colors: ExpressiveColors = context.d
 }
 
 /**
- * Turns the radio / checkbox rows of a choice dialog into segmented tonal tiles.
+ * Turns the radio / checkbox rows of a choice dialog into separate rounded tiles that sit on the
+ * dialog surface: a faint tonal tile when idle, a stronger primary tint when checked.
  * Pass the dialog root (usually the ScrollView) before it is shown.
  */
 fun ViewGroup.applyExpressiveDialogTiles() {
@@ -328,25 +339,25 @@ fun ViewGroup.applyExpressiveDialogTiles() {
 
     val density = resources.displayMetrics.density
     fun dp(v: Float) = (v * density).toInt()
-    val tile = ctx.getDialogTileColor()
-    val chosen = ColorUtils.blendARGB(tile, ctx.getProperPrimaryColor(), 0.28f)
-    val ripple = ColorStateList.valueOf(ColorUtils.setAlphaComponent(ctx.getProperTextColor(), 32))
-    val outer = dp(20f).toFloat()
-    val inner = dp(6f).toFloat()
+    val surface = ctx.getDialogBackgroundColor()
+    val textColor = ctx.getProperTextColor()
+    val idle = ColorUtils.blendARGB(surface, textColor, 0.06f)
+    val chosen = ColorUtils.blendARGB(surface, ctx.getProperPrimaryColor(), 0.26f)
+    val ripple = ColorStateList.valueOf(ColorUtils.setAlphaComponent(textColor, 32))
+    val radius = dp(18f).toFloat()
     val pending = ArrayList<View>()
 
     fun flush() {
         pending.forEachIndexed { index, row ->
-            val radii = groupedRadii(index == 0, index == pending.lastIndex, outer, inner)
             val states = StateListDrawable().apply {
-                addState(intArrayOf(android.R.attr.state_checked), roundedShape(chosen, radii))
-                addState(intArrayOf(), roundedShape(tile, radii))
+                addState(intArrayOf(android.R.attr.state_checked), roundedShape(chosen, FloatArray(8) { radius }))
+                addState(intArrayOf(), roundedShape(idle, FloatArray(8) { radius }))
             }
-            row.background = RippleDrawable(ripple, states, roundedShape(Color.WHITE, radii))
-            row.minimumHeight = dp(52f)
-            row.setPaddingRelative(dp(14f), row.paddingTop, dp(16f), row.paddingBottom)
+            row.background = RippleDrawable(ripple, states, roundedShape(Color.WHITE, FloatArray(8) { radius }))
+            row.minimumHeight = dp(56f)
+            row.setPaddingRelative(dp(16f), row.paddingTop, dp(16f), row.paddingBottom)
             (row.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
-                lp.topMargin = if (index == 0) 0 else dp(2f)
+                lp.topMargin = if (index == 0) 0 else dp(6f)
                 lp.bottomMargin = 0
                 row.layoutParams = lp
             }
@@ -365,7 +376,7 @@ fun ViewGroup.applyExpressiveDialogTiles() {
                 }
                 flush()
                 (child.layoutParams as? ViewGroup.MarginLayoutParams)?.let {
-                    it.bottomMargin = dp(12f)
+                    it.bottomMargin = dp(14f)
                     child.layoutParams = it
                 }
                 child.setPadding(0, 0, 0, 0)
