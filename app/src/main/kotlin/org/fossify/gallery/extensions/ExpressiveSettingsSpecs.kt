@@ -62,4 +62,12 @@ internal val SETTINGS_ROW_SPECS = mapOf(
     R.id.settings_import_favorites_holder to RowSpec(R.drawable.ic_set_import_favorites, false),
     R.id.settings_export_holder to RowSpec(R.drawable.ic_set_export, false),
     R.id.settings_import_holder to RowSpec(R.drawable.ic_set_import, false),
+    org.fossify.commons.R.id.customization_theme_holder to RowSpec(R.drawable.ic_set_color_customization, false),
+    org.fossify.commons.R.id.customization_text_color_holder to RowSpec(R.drawable.ic_cust_text, false),
+    org.fossify.commons.R.id.customization_background_color_holder to RowSpec(R.drawable.ic_cust_background, false),
+    org.fossify.commons.R.id.customization_primary_color_holder to RowSpec(R.drawable.ic_cust_primary, false),
+    org.fossify.commons.R.id.customization_accent_color_holder to RowSpec(R.drawable.ic_cust_accent, false),
+    org.fossify.commons.R.id.customization_app_icon_color_holder to RowSpec(R.drawable.ic_cust_app_icon, false),
+    org.fossify.commons.R.id.customization_font_holder to RowSpec(R.drawable.ic_cust_font, false),
+    org.fossify.commons.R.id.apply_to_all_holder to RowSpec(R.drawable.ic_cust_apply_all, false),
 )

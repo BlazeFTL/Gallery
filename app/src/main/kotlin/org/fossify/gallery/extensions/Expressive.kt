@@ -1,6 +1,7 @@
 package org.fossify.gallery.extensions
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -36,6 +37,7 @@ import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.isDynamicTheme
 import org.fossify.gallery.R
 
+private const val POPUP_TEXT_LIGHT = 0xFF1A1C2C.toInt()
 private const val SELECTED_SCALE = 0.88f
 private const val SELECTION_ANIM_MS = 180L
 private val SECTION_HUES = floatArrayOf(265f, 215f, 145f, 35f, 180f, 335f, 5f, 55f)
@@ -46,14 +48,20 @@ private class RoundedOutlineProvider(var radius: Float) : ViewOutlineProvider() 
     }
 }
 
+/** Colors a screen is (or is about to be) drawn with. Lets previews pass colors that are not saved yet. */
+class ExpressiveColors(val background: Int, val primary: Int, val text: Int, val dynamic: Boolean)
+
+private fun Context.defaultExpressiveColors() =
+    ExpressiveColors(getProperBackgroundColor(), getProperPrimaryColor(), getProperTextColor(), isDynamicTheme())
+
 private fun Context.isLightBackground() = ColorUtils.calculateLuminance(getProperBackgroundColor()) > 0.5
 
 /** page = screen background, tile = card surface that sits on top of it */
-private fun Context.getSettingsPalette(): Pair<Int, Int> {
-    val bg = getProperBackgroundColor()
-    val primary = getProperPrimaryColor()
-    return if (isLightBackground()) {
-        val page = if (isDynamicTheme()) {
+private fun Context.getSettingsPalette(colors: ExpressiveColors): Pair<Int, Int> {
+    val bg = colors.background
+    val primary = colors.primary
+    return if (ColorUtils.calculateLuminance(bg) > 0.5) {
+        val page = if (colors.dynamic) {
             resources.getColor(org.fossify.commons.R.color.you_dialog_background_color, theme)
         } else {
             ColorUtils.blendARGB(bg, primary, 0.08f)
@@ -140,6 +148,33 @@ fun Menu.enableExpressiveIcons(context: Context, tint: Int = context.getProperTe
     }
 }
 
+/**
+ * Popup that follows the theme: dynamic themes keep their own tonal popup, every other theme gets a
+ * light or dark rounded popup depending on the background, instead of always being dark.
+ */
+fun Toolbar.applyExpressivePopup() {
+    val tint: Int
+    if (context.isDynamicTheme()) {
+        tint = context.getProperTextColor()
+    } else if (context.isLightBackground()) {
+        popupTheme = R.style.ThemeOverlay_Gallery_LightPopup
+        tint = POPUP_TEXT_LIGHT
+    } else {
+        popupTheme = R.style.ThemeOverlay_Gallery_DarkPopup
+        tint = Color.WHITE
+    }
+    menu.enableExpressiveIcons(context, tint)
+}
+
+/** Same theme-aware popup for everything that reads it from the activity theme (action mode, context menus). */
+fun Activity.applyExpressivePopupTheme() {
+    if (isDynamicTheme()) return
+    theme.applyStyle(
+        if (isLightBackground()) R.style.ThemeOverlay_Gallery_LightPopup else R.style.ThemeOverlay_Gallery_DarkPopup,
+        true
+    )
+}
+
 /** Dark rounded popup with white icons, for toolbars drawn over the black viewer. */
 fun Toolbar.applyExpressiveDarkMenu() {
     popupTheme = R.style.ThemeOverlay_Gallery_DarkPopup
@@ -150,15 +185,15 @@ fun Toolbar.applyExpressiveDarkMenu() {
  * Material 3 Expressive settings: tonal page, white segmented cards with large outer corners,
  * per-section coloured icon badges, trailing chevrons and emphasised titles.
  */
-fun ViewGroup.applyExpressiveSettingsGroups() {
+fun ViewGroup.applyExpressiveSettingsGroups(colors: ExpressiveColors = context.defaultExpressiveColors()) {
     val ctx = context
     val density = resources.displayMetrics.density
     fun dp(v: Float) = (v * density).toInt()
 
-    val (page, tile) = ctx.getSettingsPalette()
-    val light = ctx.isLightBackground()
-    val textColor = ctx.getProperTextColor()
-    val accentText = ColorUtils.blendARGB(ctx.getProperPrimaryColor(), textColor, 0.45f)
+    val (page, tile) = ctx.getSettingsPalette(colors)
+    val light = ColorUtils.calculateLuminance(colors.background) > 0.5
+    val textColor = colors.text
+    val accentText = ColorUtils.blendARGB(colors.primary, textColor, 0.45f)
     val ripple = ColorStateList.valueOf(ColorUtils.setAlphaComponent(textColor, 32))
     val outer = dp(28f).toFloat()
     val inner = dp(6f).toFloat()

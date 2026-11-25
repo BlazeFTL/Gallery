@@ -303,4 +303,8 @@
         Haven't found some strings? There's more at
         https://github.com/FossifyOrg/Commons/tree/master/commons/src/main/res
     -->
+    <string name="theme_sky" translatable="false">Sky</string>
+    <string name="theme_violet" translatable="false">Violet</string>
+    <string name="theme_rose" translatable="false">Rose</string>
+    <string name="theme_mint" translatable="false">Mint</string>
 </resources>

@@ -14,6 +14,7 @@ import org.fossify.commons.helpers.isPiePlus
 import org.fossify.gallery.R
 import org.fossify.gallery.dialogs.StoragePermissionRequiredDialog
 import org.fossify.gallery.extensions.addPathToDB
+import org.fossify.gallery.extensions.applyExpressivePopupTheme
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.updateDirectoryPath
 import org.fossify.gallery.helpers.getPermissionsToRequest
@@ -56,6 +57,11 @@ open class SimpleActivity : BaseSimpleActivity() {
         R.mipmap.ic_launcher_blue_grey,
         R.mipmap.ic_launcher_grey_black
     )
+
+    override fun onResume() {
+        super.onResume()
+        applyExpressivePopupTheme()
+    }
 
     override fun getAppLauncherName() = getString(R.string.app_launcher_name)
 

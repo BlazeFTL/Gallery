@@ -152,7 +152,7 @@ import java.io.FileInputStream
 import java.io.FileNotFoundException
 import java.io.InputStream
 import java.io.OutputStream
-import org.fossify.gallery.extensions.enableExpressiveIcons
+import org.fossify.gallery.extensions.applyExpressivePopup
 
 class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     override var isSearchBarEnabled = true
@@ -490,7 +490,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         binding.mainMenu.requireToolbar().inflateMenu(menuId)
-        binding.mainMenu.requireToolbar().menu.enableExpressiveIcons(this)
+        binding.mainMenu.requireToolbar().applyExpressivePopup()
         binding.mainMenu.toggleHideOnScroll(!config.scrollHorizontally)
         binding.mainMenu.setupMenu()
 

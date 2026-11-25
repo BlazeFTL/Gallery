@@ -2,4 +2,14 @@
 <resources>
     <color name="crop_image_view_background">#BB000000</color>
     <color name="circle_black_background">#66000000</color>
+    <!-- Expressive preset themes (sampled from the reference screens) -->
+    <color name="theme_ref_text">#1A1C2C</color>
+    <color name="theme_ref_background">#FFFFFF</color>
+    <color name="theme_sky_primary">#0B57D0</color>
+    <color name="theme_violet_primary">#6750A4</color>
+    <color name="theme_rose_primary">#F43F5E</color>
+    <color name="theme_mint_primary">#0FA37F</color>
+    <!-- overrides the commons values used by the Light preset -->
+    <color name="theme_light_text_color">@color/theme_ref_text</color>
+    <color name="theme_light_background_color">@color/theme_ref_background</color>
 </resources>

@@ -148,7 +148,11 @@ class SettingsActivity : SimpleActivity() {
 
     private fun setupCustomizeColors() {
         binding.settingsColorCustomizationHolder.setOnClickListener {
-            startCustomizationActivity()
+            android.content.Intent(applicationContext, CustomizationActivity::class.java).apply {
+                putExtra(org.fossify.commons.helpers.APP_ICON_IDS, getAppIconIDs())
+                putExtra(org.fossify.commons.helpers.APP_LAUNCHER_NAME, getAppLauncherName())
+                startActivity(this)
+            }
         }
     }
 

@@ -54,4 +54,16 @@
         <item name="android:popupBackground">@drawable/bg_popup_dark</item>
         <item name="android:popupElevation">8dp</item>
     </style>
+
+    <style name="ThemeOverlay.Gallery.LightPopup" parent="">
+        <item name="android:textColor">#FF1A1C2C</item>
+        <item name="actionOverflowMenuStyle">@style/Widget.Gallery.PopupMenu.Light</item>
+        <item name="textAppearanceLargePopupMenu">@style/TextAppearance.Gallery.PopupMenu</item>
+        <item name="dropdownListPreferredItemHeight">@dimen/expressive_menu_item_height</item>
+    </style>
+
+    <style name="Widget.Gallery.PopupMenu.Light" parent="@style/Widget.MaterialComponents.PopupMenu.Overflow">
+        <item name="android:popupBackground">@drawable/bg_popup_light</item>
+        <item name="android:popupElevation">8dp</item>
+    </style>
 </resources>
