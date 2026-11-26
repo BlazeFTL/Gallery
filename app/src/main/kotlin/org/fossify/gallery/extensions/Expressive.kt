@@ -12,6 +12,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Build
@@ -225,16 +226,19 @@ private fun ViewGroup.styleExpressiveActionBar() {
     val textColor = ctx.getProperTextColor()
     val container = ColorUtils.blendARGB(ctx.getProperBackgroundColor(), ctx.getProperPrimaryColor(), 0.22f)
 
-    background = GradientDrawable().apply {
+    // AppCompat owns the top margin of this bar (it keeps the bar below the status bar), so the rounded pill is
+    // drawn inside the bar instead of moving the bar. The solid layer hides the search bar underneath.
+    val pill = GradientDrawable().apply {
         cornerRadius = dp(28f).toFloat()
         setColor(container)
     }
-    (layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
-        if (lp.leftMargin != dp(12f)) {
-            lp.setMargins(dp(12f), dp(8f), dp(12f), dp(4f))
-            layoutParams = lp
-        }
-    }
+    background = LayerDrawable(
+        arrayOf(
+            ColorDrawable(ctx.getProperBackgroundColor()),
+            InsetDrawable(pill, dp(12f), dp(8f), dp(12f), dp(8f))
+        )
+    )
+    setPadding(dp(16f), dp(8f), dp(16f), dp(8f))
 
     (findViewById<View>(androidx.appcompat.R.id.action_mode_close_button) as? ImageView)?.apply {
         setImageResource(R.drawable.ic_cross_vector)
@@ -249,21 +253,22 @@ private fun ViewGroup.styleExpressiveActionBar() {
         }
     }
 
-    fun chip(): RippleDrawable {
-        val fill = GradientDrawable().apply {
+    fun circle(color: Int): LayerDrawable {
+        val oval = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(ColorUtils.setAlphaComponent(textColor, 22))
+            setColor(color)
         }
-        val mask = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Color.WHITE)
+        return LayerDrawable(arrayOf<android.graphics.drawable.Drawable>(oval)).apply {
+            setLayerSize(0, dp(40f), dp(40f))
+            setLayerGravity(0, Gravity.CENTER)
         }
-        return RippleDrawable(
-            ColorStateList.valueOf(ColorUtils.setAlphaComponent(textColor, 40)),
-            InsetDrawable(fill, dp(4f), dp(8f), dp(4f), dp(8f)),
-            InsetDrawable(mask, dp(4f), dp(8f), dp(4f), dp(8f))
-        )
     }
+
+    fun chip() = RippleDrawable(
+        ColorStateList.valueOf(ColorUtils.setAlphaComponent(textColor, 40)),
+        circle(ColorUtils.setAlphaComponent(textColor, 22)),
+        circle(Color.WHITE)
+    )
 
     val menuView = findActionMenuView() ?: return
     for (i in 0 until menuView.childCount) {
