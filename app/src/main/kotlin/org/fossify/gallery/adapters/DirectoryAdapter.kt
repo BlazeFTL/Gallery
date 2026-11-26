@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.Icon
 import android.text.TextUtils
 import android.view.Menu
@@ -13,6 +14,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.RelativeLayout
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.graphics.ColorUtils
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -65,6 +67,7 @@ import org.fossify.commons.models.FileDirItem
 import org.fossify.commons.views.MyRecyclerView
 import org.fossify.gallery.R
 import org.fossify.gallery.activities.MediaActivity
+import org.fossify.gallery.databinding.DirectoryItemGridBelowBinding
 import org.fossify.gallery.databinding.DirectoryItemGridRoundedCornersBinding
 import org.fossify.gallery.databinding.DirectoryItemGridSquareBinding
 import org.fossify.gallery.databinding.DirectoryItemListBinding
@@ -88,6 +91,7 @@ import org.fossify.gallery.extensions.setExpressiveSelected
 import org.fossify.gallery.extensions.showRecycleBinEmptyingDialog
 import org.fossify.gallery.extensions.tryCopyMoveFilesTo
 import org.fossify.gallery.helpers.DIRECTORY
+import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_BELOW
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_BRACKETS
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_LINE
 import org.fossify.gallery.helpers.FOLDER_STYLE_ROUNDED_CORNERS
@@ -137,7 +141,8 @@ class DirectoryAdapter(
     private var startReorderDragListener: StartReorderDragListener? = null
 
     private var showMediaCount = config.showFolderMediaCount
-    private var folderStyle = config.folderStyle
+    private val belowMode = showMediaCount == FOLDER_MEDIA_CNT_BELOW && !isListViewType
+    private var folderStyle = if (belowMode) FOLDER_STYLE_ROUNDED_CORNERS else config.folderStyle
     private var limitFolderTitle = config.limitFolderTitle
     var directorySorting = config.directorySorting
     var dateFormat = config.dateFormat
@@ -153,6 +158,7 @@ class DirectoryAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = when {
             isListViewType -> DirectoryItemListBinding.inflate(layoutInflater, parent, false)
+            belowMode -> DirectoryItemGridBelowBinding.inflate(layoutInflater, parent, false)
             folderStyle == FOLDER_STYLE_SQUARE -> DirectoryItemGridSquareBinding.inflate(layoutInflater, parent, false)
             else -> DirectoryItemGridRoundedCornersBinding.inflate(layoutInflater, parent, false)
         }
@@ -875,7 +881,7 @@ class DirectoryAdapter(
                 dirHolder.isSelected = isSelected
             }
 
-            if (scrollHorizontally && !isListViewType && folderStyle == FOLDER_STYLE_ROUNDED_CORNERS) {
+            if (scrollHorizontally && !isListViewType && !belowMode && folderStyle == FOLDER_STYLE_ROUNDED_CORNERS) {
                 (dirThumbnail.layoutParams as RelativeLayout.LayoutParams).addRule(RelativeLayout.ABOVE, dirName.id)
 
                 val photoCntParams = (photoCnt.layoutParams as RelativeLayout.LayoutParams)
@@ -935,8 +941,13 @@ class DirectoryAdapter(
                 dirLocation.setImageResource(if (directory.location == LOCATION_SD) org.fossify.commons.R.drawable.ic_sd_card_vector else org.fossify.commons.R.drawable.ic_usb_vector)
             }
 
-            photoCnt.text = directory.subfoldersMediaCount.toString()
-            photoCnt.beVisibleIf(showMediaCount == FOLDER_MEDIA_CNT_LINE)
+            val mediaCount = directory.subfoldersMediaCount
+            photoCnt.text = if (belowMode) {
+                root.context.resources.getQuantityString(R.plurals.folder_items_count, mediaCount, mediaCount)
+            } else {
+                mediaCount.toString()
+            }
+            photoCnt.beVisibleIf(showMediaCount == FOLDER_MEDIA_CNT_LINE || belowMode || (isListViewType && showMediaCount == FOLDER_MEDIA_CNT_BELOW))
 
             if (limitFolderTitle) {
                 dirName.setSingleLine()
@@ -960,6 +971,20 @@ class DirectoryAdapter(
                 photoCnt.setTextColor(textColor)
                 dirName.setTextColor(textColor)
                 dirLocation.applyColorFilter(textColor)
+            }
+
+            dirLocationChip?.let { chip ->
+                dirLocation.beGone()
+                val onRemovable = directory.location != LOCATION_INTERNAL
+                chip.beVisibleIf(onRemovable)
+                if (onRemovable) {
+                    chip.setText(if (directory.location == LOCATION_SD) R.string.folder_location_sd else R.string.folder_location_usb)
+                    chip.setTextColor(textColor)
+                    chip.background = GradientDrawable().apply {
+                        cornerRadius = 6f * root.context.resources.displayMetrics.density
+                        setColor(ColorUtils.setAlphaComponent(properPrimaryColor, 64))
+                    }
+                }
             }
 
             if (isListViewType) {
@@ -1010,6 +1035,7 @@ class DirectoryAdapter(
     private fun bindItem(view: View): DirectoryItemBinding {
         return when {
             isListViewType -> DirectoryItemListBinding.bind(view).toItemBinding()
+            belowMode -> DirectoryItemGridBelowBinding.bind(view).toItemBinding()
             folderStyle == FOLDER_STYLE_SQUARE -> DirectoryItemGridSquareBinding.bind(view).toItemBinding()
             else -> DirectoryItemGridRoundedCornersBinding.bind(view).toItemBinding()
         }

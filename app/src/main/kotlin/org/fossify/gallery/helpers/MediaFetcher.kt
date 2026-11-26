@@ -98,6 +98,7 @@ class MediaFetcher(val context: Context) {
         FastScanner.refreshDir(context, curPath)
         val media = FastScanner.getFolderMedia(context, curPath, isPickImage, isPickVideo, getProperFileSize)
         val favorites = if (favoritePaths.isEmpty()) null else favoritePaths.toHashSet()
+        var storedMedia: Map<String, Medium>? = null
         for (medium in media) {
             if (shouldStop) {
                 break
@@ -112,7 +113,27 @@ class MediaFetcher(val context: Context) {
             }
 
             if (getVideoDurations && medium.isVideo()) {
-                medium.videoDuration = context.getDuration(medium.path) ?: 0
+                // reading a duration opens the file, so every video is read once per change and then remembered
+                val durationKey = "${medium.path}|${medium.modified}"
+                var duration = VideoDurationCache.durations[durationKey]
+                if (duration == null) {
+                    if (storedMedia == null) {
+                        storedMedia = try {
+                            context.mediaDB.getMediaFromPath(curPath).associateBy { it.path }
+                        } catch (ignored: Exception) {
+                            emptyMap()
+                        }
+                    }
+
+                    val stored = storedMedia?.get(medium.path)
+                    duration = if (stored != null && stored.modified == medium.modified && stored.videoDuration > 0) {
+                        stored.videoDuration
+                    } else {
+                        context.getDuration(medium.path) ?: 0
+                    }
+                    VideoDurationCache.durations[durationKey] = duration
+                }
+                medium.videoDuration = duration
             }
         }
 
@@ -974,4 +995,8 @@ class MediaFetcher(val context: Context) {
         }
         return context.getString(stringId)
     }
+}
+
+private object VideoDurationCache {
+    val durations = java.util.concurrent.ConcurrentHashMap<String, Int>()
 }

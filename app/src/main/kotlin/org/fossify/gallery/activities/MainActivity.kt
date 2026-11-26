@@ -115,6 +115,7 @@ import org.fossify.gallery.extensions.tryDeleteFileDirItem
 import org.fossify.gallery.extensions.updateDBDirectory
 import org.fossify.gallery.extensions.updateWidgets
 import org.fossify.gallery.helpers.DIRECTORY
+import org.fossify.gallery.helpers.DirectoryCache
 import org.fossify.gallery.helpers.GET_ANY_INTENT
 import org.fossify.gallery.helpers.GET_IMAGE_INTENT
 import org.fossify.gallery.helpers.GET_VIDEO_INTENT
@@ -172,6 +173,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private var mIsThirdPartyIntent = false
     private var mIsGettingDirs = false
     private var mLoadedInitialPhotos = false
+    private var mPaintedSnapshot = false
     private var mShouldStopFetching = false
     private var mWasDefaultFolderChecked = false
     private var mWasMediaManagementPromptShown = false
@@ -400,7 +402,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
             if (!config.showAll) {
                 mLastMediaFetcher?.shouldStop = true
-                GalleryDatabase.destroyInstance()
             }
         }
     }
@@ -659,10 +660,34 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         val getImages = mIsPickImageIntent || mIsGetImageContentIntent
         val getVideos = mIsPickVideoIntent || mIsGetVideoContentIntent
 
+        paintDirectorySnapshot(getImages && !getVideos, getVideos && !getImages)
         getCachedDirectories(getVideos && !getImages, getImages && !getVideos) {
             gotDirectories(addTempFolderIfNeeded(it))
         }
     }
+
+    // The folder list of the last session is painted right away, the scan replaces it a moment later.
+    private fun paintDirectorySnapshot(imagesOnly: Boolean, videosOnly: Boolean) {
+        if (mLoadedInitialPhotos || mPaintedSnapshot || binding.directoriesGrid.adapter != null) {
+            return
+        }
+
+        val snapshot = DirectoryCache.get(applicationContext, directorySnapshotSignature(imagesOnly, videosOnly))
+            ?.filter { !PendingRemovals.contains(it.path) } as? ArrayList<Directory>
+        if (snapshot.isNullOrEmpty()) {
+            return
+        }
+
+        mPaintedSnapshot = true
+        val sorted = getSortedDirectories(snapshot)
+        if (config.groupDirectSubfolders) {
+            mDirs = sorted.clone() as ArrayList<Directory>
+        }
+        setupAdapter(sorted.clone() as ArrayList<Directory>)
+    }
+
+    private fun directorySnapshotSignature(imagesOnly: Boolean, videosOnly: Boolean) =
+        DirectoryCache.signature(applicationContext, imagesOnly, videosOnly)
 
     private fun launchSearchActivity() {
         hideKeyboard()
@@ -1146,7 +1171,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         // the cached list is only for the first paint, on later reloads the fast scan result comes in a moment
         // and showing stale cached folders first would make removed albums flash up again
-        if (!fastScan || !mLoadedInitialPhotos) {
+        if ((!fastScan || !mLoadedInitialPhotos) && !(mPaintedSnapshot && dirs.isEmpty())) {
             runOnUiThread {
                 checkPlaceholderVisibility(dirs)
                 setupAdapter(dirs.clone() as ArrayList<Directory>)
@@ -1478,19 +1503,47 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             }
         }
 
+        // show the scanned folders at once with the Favorites and Recycle bin entries of the last run,
+        // the slower lookups of those two follow below and refresh the list only if something changed
+        val snapshotSignature = directorySnapshotSignature(getImagesOnly, getVideosOnly)
+        val quickDirs = ArrayList<Directory>(newDirs)
+        cachedDirs.filter { it.areFavorites() || (it.isRecycleBin() && config.showRecycleBinAtFolders) }.forEach { special ->
+            val hideFavorites = special.areFavorites()
+                    && !config.shouldShowHidden
+                    && special.tmb.getFilenameFromPath().startsWith('.')
+            if (!hideFavorites) {
+                quickDirs.add(special)
+            }
+        }
+        if (tempFolderPath.isNotEmpty() && quickDirs.none { it.path == tempFolderPath }) {
+            cachedDirs.firstOrNull { it.path == tempFolderPath }?.let { quickDirs.add(it) }
+        }
+
+        mLoadedInitialPhotos = true
+        setupAdapter(quickDirs)
+        runOnUiThread {
+            binding.directoriesRefreshLayout.isRefreshing = false
+            checkPlaceholderVisibility(quickDirs)
+        }
+        DirectoryCache.put(applicationContext, snapshotSignature, quickDirs)
+
         // Favorites and the Recycle bin live in the database, use the regular loader for them
         val fetcher = MediaFetcher(applicationContext)
         mLastMediaFetcher = fetcher
         val favoritePaths = getFavoritePaths()
         val includedFolders = config.includedFolders
-        val noMediaFolders = getNoMediaFoldersSync()
-        val dateTakens = fetcher.getDateTakens()
+        val noMediaFolders by lazy { getNoMediaFoldersSync() }
+        val dateTakens by lazy { fetcher.getDateTakens() }
         val specialPaths = arrayListOf(FAVORITES)
         if (config.showRecycleBinAtFolders) {
             specialPaths.add(RECYCLE_BIN)
         }
 
         for (special in specialPaths) {
+            if (special == FAVORITES && favoritePaths.isEmpty()) {
+                continue
+            }
+
             val specialMedia = fetcher.getFilesFrom(
                 curPath = special,
                 isPickImage = getImagesOnly,
@@ -1537,6 +1590,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             binding.directoriesRefreshLayout.isRefreshing = false
             checkPlaceholderVisibility(newDirs)
         }
+        DirectoryCache.put(applicationContext, snapshotSignature, newDirs)
 
         val cachedByPath = cachedDirs.associateBy { it.path }
         val newPaths = newDirs.map { it.path }.toHashSet()

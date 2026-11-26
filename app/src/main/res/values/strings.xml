@@ -224,6 +224,22 @@
     <string name="show_file_count_line">Show file count on a separate line</string>
     <string name="show_file_count_brackets">Show file count in brackets</string>
     <string name="show_file_count_none">Do not show file count</string>
+    <string name="show_folder_info_below">Show name and item count below thumbnail</string>
+    <plurals name="folder_items_count">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <string name="folder_location_sd">SD Card</string>
+    <string name="folder_location_usb">USB</string>
+    <string name="app_icon_style_title">App icon</string>
+    <string name="app_icon_style_classic">Classic</string>
+    <string name="app_icon_style_classic_hint">Pick a color</string>
+    <string name="app_icon_style_1" translatable="false">Aurora</string>
+    <string name="app_icon_style_2" translatable="false">Polaroid</string>
+    <string name="app_icon_style_3" translatable="false">Aperture</string>
+    <string name="app_icon_style_4" translatable="false">Stack</string>
+    <string name="app_icon_style_5" translatable="false">Petals</string>
+    <string name="app_icon_style_6" translatable="false">Sunset</string>
     <string name="limit_folder_title">Limit long folder titles to 1 line</string>
     <string name="square">Square</string>
     <string name="rounded_corners">Rounded corners</string>

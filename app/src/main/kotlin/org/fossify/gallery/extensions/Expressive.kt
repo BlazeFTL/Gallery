@@ -6,7 +6,10 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Outline
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
@@ -42,8 +45,7 @@ import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.isDynamicTheme
 import org.fossify.gallery.R
 
-private const val SELECTED_SCALE = 0.88f
-private const val SELECTION_ANIM_MS = 180L
+private const val SELECTED_SCRIM = 0x4DFFFFFF
 private val SECTION_HUES = floatArrayOf(265f, 215f, 145f, 35f, 180f, 335f, 5f, 55f)
 
 private class RoundedOutlineProvider(var radius: Float) : ViewOutlineProvider() {
@@ -102,8 +104,8 @@ private fun roundedShape(color: Int, radii: FloatArray) = GradientDrawable().app
 }
 
 /**
- * Material 3 Expressive selection morph: the tile shrinks and its corners grow while selected.
- * [key] identifies the bound item so recycled views snap to state instead of animating.
+ * Selection feedback for grid tiles. The tile keeps its size and shape, a light scrim marks it as selected and
+ * the check badge does the rest. [key] identifies the bound item so recycled views always snap to their state.
  */
 fun View.setExpressiveSelected(selected: Boolean, key: Any?, idleRadiusPx: Float, selectedRadiusPx: Float) {
     val provider = outlineProvider as? RoundedOutlineProvider ?: RoundedOutlineProvider(idleRadiusPx).also {
@@ -111,23 +113,52 @@ fun View.setExpressiveSelected(selected: Boolean, key: Any?, idleRadiusPx: Float
         clipToOutline = true
     }
 
-    val targetScale = if (selected) SELECTED_SCALE else 1f
-    val sameItem = getTag(R.id.expressive_selection_key) == key
-    setTag(R.id.expressive_selection_key, key)
-
     animate().cancel()
-    provider.radius = if (selected) selectedRadiusPx else idleRadiusPx
+    provider.radius = idleRadiusPx
     invalidateOutline()
+    scaleX = 1f
+    scaleY = 1f
+    setTag(R.id.expressive_selection_key, key)
+    foreground = if (selected) ColorDrawable(SELECTED_SCRIM) else null
+}
 
-    if (sameItem && isAttachedToWindow) {
-        animate()
-            .scaleX(targetScale)
-            .scaleY(targetScale)
-            .setDuration(SELECTION_ANIM_MS)
-            .start()
-    } else {
-        scaleX = targetScale
-        scaleY = targetScale
+/**
+ * Check badge of a selectable grid tile. Selected tiles show a filled check at the top end, the other tiles of a
+ * running selection show an empty ring at the top start, and tiles outside of a selection show nothing.
+ */
+fun ImageView.applySelectionBadge(selected: Boolean, selectionMode: Boolean, primary: Int, contrast: Int) {
+    val params = layoutParams as? RelativeLayout.LayoutParams
+    fun moveTo(atEnd: Boolean) {
+        if (params == null) return
+        if (atEnd) {
+            params.removeRule(RelativeLayout.ALIGN_PARENT_START)
+            params.addRule(RelativeLayout.ALIGN_PARENT_END)
+        } else {
+            params.removeRule(RelativeLayout.ALIGN_PARENT_END)
+            params.addRule(RelativeLayout.ALIGN_PARENT_START)
+        }
+        layoutParams = params
+    }
+
+    when {
+        selected -> {
+            visibility = View.VISIBLE
+            moveTo(true)
+            setBackgroundResource(R.drawable.circle_background)
+            background?.mutate()?.colorFilter = PorterDuffColorFilter(primary, PorterDuff.Mode.SRC_IN)
+            setImageResource(R.drawable.ic_check_vector)
+            setColorFilter(contrast)
+        }
+
+        selectionMode -> {
+            visibility = View.VISIBLE
+            moveTo(false)
+            setBackgroundResource(R.drawable.bg_select_ring)
+            setImageDrawable(null)
+            clearColorFilter()
+        }
+
+        else -> visibility = View.GONE
     }
 }
 
@@ -221,20 +252,42 @@ fun ViewGroup.applyExpressiveSettingsGroups(colors: ExpressiveColors = context.d
         val valueLp = texts.getOrNull(1)?.layoutParams as? RelativeLayout.LayoutParams
         val inlineValue = texts.size == 2 && row is RelativeLayout && valueLp != null && valueLp.getRule(RelativeLayout.BELOW) == 0
         val singleLine = texts.size == 1 && texts[0] !is CompoundButton
-        if ((singleLine || inlineValue) && (row is RelativeLayout || row is ConstraintLayout)) {
-            row.setPaddingRelative(row.paddingStart, dp(12f), row.paddingEnd, dp(12f))
-            row.minimumHeight = dp(64f)
-            texts.take(if (inlineValue) 2 else 1).forEach { tv ->
-                when (val lp = tv.layoutParams) {
-                    is RelativeLayout.LayoutParams -> {
-                        lp.addRule(RelativeLayout.CENTER_VERTICAL)
+        val hasSwitch = texts.any { it is CompoundButton }
+
+        if (row is RelativeLayout || row is ConstraintLayout) {
+            // every row gets the same height: switch rows are as tall as their switch, the rest sits at the minimum
+            val vertical = if (hasSwitch) dp(4f) else dp(8f)
+            row.setPaddingRelative(row.paddingStart, vertical, row.paddingEnd, vertical)
+            row.minimumHeight = dp(56f)
+            texts.forEach { tv ->
+                if (tv !is CompoundButton) {
+                    tv.setPadding(tv.paddingLeft, 0, tv.paddingRight, 0)
+                    (tv.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+                        lp.topMargin = 0
+                        lp.bottomMargin = 0
                         tv.layoutParams = lp
                     }
+                }
+            }
 
-                    is ConstraintLayout.LayoutParams -> {
-                        lp.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-                        lp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                        tv.layoutParams = lp
+            if (texts.size >= 2 && !inlineValue) {
+                texts[1].setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                (row as? RelativeLayout)?.gravity = Gravity.CENTER_VERTICAL
+            }
+
+            if (singleLine || inlineValue) {
+                texts.take(if (inlineValue) 2 else 1).forEach { tv ->
+                    when (val lp = tv.layoutParams) {
+                        is RelativeLayout.LayoutParams -> {
+                            lp.addRule(RelativeLayout.CENTER_VERTICAL)
+                            tv.layoutParams = lp
+                        }
+
+                        is ConstraintLayout.LayoutParams -> {
+                            lp.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                            lp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                            tv.layoutParams = lp
+                        }
                     }
                 }
             }
@@ -325,8 +378,9 @@ fun ViewGroup.applyExpressiveSettingsGroups(colors: ExpressiveColors = context.d
 }
 
 /**
- * Clean Expressive choice list for dialogs: idle rows have no container, the checked row gets a
- * primary-tinted pill. Pass the dialog root (usually the ScrollView) before it is shown.
+ * Expressive choice list for dialogs: every option is a tonal tile, tiles of one group are joined with large outer
+ * and small inner corners, and the checked tile is tinted with the primary color. Pass the dialog root (usually the
+ * ScrollView) before it is shown.
  */
 fun ViewGroup.applyExpressiveDialogTiles() {
     val ctx = context
@@ -339,23 +393,27 @@ fun ViewGroup.applyExpressiveDialogTiles() {
     fun dp(v: Float) = (v * density).toInt()
     val surface = ctx.getDialogBackgroundColor()
     val textColor = ctx.getProperTextColor()
-    val chosen = ColorUtils.blendARGB(surface, ctx.getProperPrimaryColor(), 0.24f)
+    val idle = ColorUtils.blendARGB(surface, textColor, 0.07f)
+    val chosen = ColorUtils.blendARGB(surface, ctx.getProperPrimaryColor(), 0.30f)
     val ripple = ColorStateList.valueOf(ColorUtils.setAlphaComponent(textColor, 32))
-    val radii = FloatArray(8) { dp(26f).toFloat() }
+    val outer = dp(18f).toFloat()
+    val inner = dp(6f).toFloat()
     val pending = ArrayList<View>()
 
     fun flush() {
         pending.forEachIndexed { index, row ->
+            val radii = groupedRadii(index == 0, index == pending.lastIndex, outer, inner)
             val states = StateListDrawable().apply {
                 addState(intArrayOf(android.R.attr.state_checked), roundedShape(chosen, radii))
-                addState(intArrayOf(), roundedShape(Color.TRANSPARENT, radii))
+                addState(intArrayOf(), roundedShape(idle, radii))
             }
             row.background = RippleDrawable(ripple, states, roundedShape(Color.WHITE, radii))
-            row.minimumHeight = dp(52f)
-            row.setPaddingRelative(dp(12f), row.paddingTop, dp(16f), row.paddingBottom)
+            row.minimumHeight = dp(56f)
+            row.setPaddingRelative(dp(14f), dp(6f), dp(16f), dp(6f))
+            (row as? TextView)?.setMediumWeight()
             (row.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
                 lp.topMargin = if (index == 0) 0 else dp(2f)
-                lp.bottomMargin = 0
+                lp.bottomMargin = if (index == pending.lastIndex) dp(12f) else 0
                 row.layoutParams = lp
             }
         }
@@ -373,7 +431,7 @@ fun ViewGroup.applyExpressiveDialogTiles() {
                 }
                 flush()
                 (child.layoutParams as? ViewGroup.MarginLayoutParams)?.let {
-                    it.bottomMargin = dp(12f)
+                    it.bottomMargin = 0
                     child.layoutParams = it
                 }
                 child.setPadding(0, 0, 0, 0)
@@ -441,7 +499,7 @@ private fun Context.popupPalette(): PopupPalette {
         surface = resources.getColor(org.fossify.commons.R.color.you_dialog_background_color, theme)
         text = resources.getColor(org.fossify.commons.R.color.you_neutral_text_color, theme)
     } else {
-        surface = ColorUtils.blendARGB(bg, primary, if (light) 0.06f else 0.16f)
+        surface = ColorUtils.blendARGB(bg, primary, if (light) 0.10f else 0.16f)
         text = getProperTextColor()
     }
     return PopupPalette(surface, text, ColorUtils.setAlphaComponent(text, 230), ColorUtils.setAlphaComponent(text, 32))
@@ -451,7 +509,7 @@ private fun ViewGroup.findOverflowButton(): View? {
     val description = context.getString(androidx.appcompat.R.string.abc_action_menu_overflow_description)
     for (i in 0 until childCount) {
         val v = getChildAt(i)
-        if (v is ImageView && v.contentDescription?.toString() == description) return v
+        if (v is ImageView && (v.contentDescription?.toString() == description || v.javaClass.simpleName == "OverflowMenuButton")) return v
         if (v is ViewGroup) v.findOverflowButton()?.let { return it }
     }
     return null
@@ -463,11 +521,17 @@ private fun ViewGroup.findOverflowButton(): View? {
  */
 @SuppressLint("RestrictedApi")
 fun ViewGroup.installExpressiveOverflow(menuProvider: () -> Menu?) {
+    val host = this
+
     fun tryInstall(): Boolean {
-        val button = findOverflowButton() ?: return false
+        val button = host.findOverflowButton() ?: return false
         button.setOnClickListener { anchor ->
             val owner = menuProvider() as? MenuBuilder ?: return@setOnClickListener
-            val items = owner.nonActionItems.filter { it.isVisible }
+            var items: List<MenuItem> = owner.nonActionItems.filter { it.isVisible }
+            if (items.isEmpty()) {
+                items = owner.visibleItems.filter { !it.isActionButton && it.isVisible }
+            }
+
             if (items.isNotEmpty()) {
                 anchor.context.showExpressiveMenu(anchor, owner, items, null, null)
             }
@@ -476,15 +540,20 @@ fun ViewGroup.installExpressiveOverflow(menuProvider: () -> Menu?) {
     }
 
     if (!tryInstall()) {
-        addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+        host.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
             override fun onLayoutChange(
                 v: View?, left: Int, top: Int, right: Int, bottom: Int,
                 oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
             ) {
-                if (tryInstall()) removeOnLayoutChangeListener(this)
+                if (tryInstall()) host.removeOnLayoutChangeListener(this)
             }
         })
     }
+
+    // The action mode bar creates its overflow button after the menu was prepared. A few late attempts make sure
+    // the button is found even if no layout pass reports it.
+    val retry = Runnable { tryInstall() }
+    longArrayOf(40L, 150L, 400L, 900L).forEach { host.postDelayed(retry, it) }
 }
 
 @SuppressLint("RestrictedApi")
@@ -501,8 +570,8 @@ private fun Context.showExpressiveMenu(
 
     val list = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
-        minimumWidth = dp(224f)
+        setPadding(dp(6f), dp(8f), dp(6f), dp(8f))
+        minimumWidth = dp(200f)
     }
     val scroll = ScrollView(this).apply {
         isVerticalScrollBarEnabled = false
@@ -511,9 +580,9 @@ private fun Context.showExpressiveMenu(
     val popup = PopupWindow(scroll, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true)
     popup.setBackgroundDrawable(GradientDrawable().apply {
         setColor(palette.surface)
-        cornerRadius = dp(24f).toFloat()
+        cornerRadius = dp(18f).toFloat()
     })
-    popup.elevation = dp(8f).toFloat()
+    popup.elevation = dp(6f).toFloat()
     popup.isOutsideTouchable = true
 
     val hasIcons = items.any { it.icon != null }
@@ -524,11 +593,11 @@ private fun Context.showExpressiveMenu(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(48f)
-            setPaddingRelative(dp(16f), 0, dp(16f), 0)
+            setPaddingRelative(dp(10f), 0, dp(8f), 0)
             background = RippleDrawable(
                 ColorStateList.valueOf(palette.ripple),
                 null,
-                roundedShape(Color.WHITE, FloatArray(8) { dp(16f).toFloat() })
+                roundedShape(Color.WHITE, FloatArray(8) { dp(12f).toFloat() })
             )
             alpha = if (enabled) 1f else 0.38f
             isEnabled = enabled
@@ -551,7 +620,7 @@ private fun Context.showExpressiveMenu(
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             if (bold) setMediumWeight()
-            setPaddingRelative(if (leading != null || hasIcons) dp(16f) else 0, 0, dp(12f), 0)
+            setPaddingRelative(if (leading != null || hasIcons) dp(16f) else 0, 0, dp(8f), 0)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (trailingRes != 0) {
             val trailing = AppCompatResources.getDrawable(this, trailingRes)?.mutate()?.also { it.setTint(palette.icon) }
@@ -596,12 +665,21 @@ private fun Context.showExpressiveMenu(
     )
     popup.width = scroll.measuredWidth
     popup.height = minOf(scroll.measuredHeight, maxHeight)
-    popup.showAsDropDown(anchor, -dp(8f), -anchor.height + dp(4f), Gravity.END)
+    val anchorLocation = IntArray(2)
+    anchor.getLocationOnScreen(anchorLocation)
+    val edgeMargin = dp(10f)
+    val rtl = anchor.layoutDirection == View.LAYOUT_DIRECTION_RTL
+    val xOffset = if (rtl) {
+        edgeMargin - anchorLocation[0]
+    } else {
+        resources.displayMetrics.widthPixels - edgeMargin - (anchorLocation[0] + anchor.width)
+    }
+    popup.showAsDropDown(anchor, xOffset, -dp(10f), Gravity.END)
 
     scroll.alpha = 0f
     scroll.scaleX = 0.9f
     scroll.scaleY = 0.9f
-    scroll.pivotX = popup.width.toFloat()
+    scroll.pivotX = if (rtl) 0f else popup.width.toFloat()
     scroll.pivotY = 0f
     scroll.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(150L).start()
 }

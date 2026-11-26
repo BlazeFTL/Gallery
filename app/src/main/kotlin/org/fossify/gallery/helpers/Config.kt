@@ -588,6 +588,10 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getInt(FOLDER_THUMBNAIL_STYLE, FOLDER_STYLE_SQUARE)
         set(folderStyle) = prefs.edit().putInt(FOLDER_THUMBNAIL_STYLE, folderStyle).apply()
 
+    var appIconStyle: Int
+        get() = prefs.getInt("app_icon_style", 0)
+        set(appIconStyle) = prefs.edit().putInt("app_icon_style", appIconStyle).apply()
+
     var limitFolderTitle: Boolean
         get() = prefs.getBoolean(LIMIT_FOLDER_TITLE, false)
         set(limitFolderTitle) = prefs.edit().putBoolean(LIMIT_FOLDER_TITLE, limitFolderTitle).apply()

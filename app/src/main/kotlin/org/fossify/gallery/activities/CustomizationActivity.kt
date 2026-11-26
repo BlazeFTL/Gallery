@@ -24,6 +24,8 @@ import org.fossify.commons.extensions.baseConfig
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.canAccessGlobalConfig
 import org.fossify.commons.extensions.checkAppIconColor
+import org.fossify.gallery.dialogs.AppIconStyleDialog
+import org.fossify.gallery.helpers.AppIconStyles
 import org.fossify.commons.extensions.getColoredMaterialStatusBarColor
 import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getFilenameFromUri
@@ -474,6 +476,7 @@ class CustomizationActivity : BaseSimpleActivity() {
 
         if (didAppIconColorChange) {
             checkAppIconColor()
+            AppIconStyles.ensureApplied(this)
         }
 
         FontHelper.clearCache()
@@ -562,7 +565,7 @@ class CustomizationActivity : BaseSimpleActivity() {
         binding.applyToAllHolder.setOnClickListener { applyToAll() }
         binding.customizationAppIconColorHolder.setOnClickListener {
             if (baseConfig.wasAppIconCustomizationWarningShown) {
-                pickAppIconColor()
+                pickAppIcon()
             } else {
                 ConfirmationDialog(
                     activity = this,
@@ -572,7 +575,7 @@ class CustomizationActivity : BaseSimpleActivity() {
                     negative = 0
                 ) {
                     baseConfig.wasAppIconCustomizationWarningShown = true
-                    pickAppIconColor()
+                    pickAppIcon()
                 }
             }
         }
@@ -808,6 +811,20 @@ class CustomizationActivity : BaseSimpleActivity() {
                 }
             }
         }
+    }
+
+    private fun pickAppIcon() {
+        AppIconStyleDialog(
+            activity = this,
+            selectedStyle = AppIconStyles.currentStyle(this),
+            onClassic = {
+                AppIconStyles.apply(this, AppIconStyles.CLASSIC)
+                pickAppIconColor()
+            },
+            onStyle = { style ->
+                AppIconStyles.apply(this, style)
+            }
+        )
     }
 
     private fun pickAppIconColor() {

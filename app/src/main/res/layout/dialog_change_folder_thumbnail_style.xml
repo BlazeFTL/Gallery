@@ -69,6 +69,14 @@
                 android:text="@string/show_file_count_brackets" />
 
             <org.fossify.commons.views.MyCompatRadioButton
+                android:id="@+id/dialog_radio_folder_count_below"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="@dimen/medium_margin"
+                android:paddingBottom="@dimen/medium_margin"
+                android:text="@string/show_folder_info_below" />
+
+            <org.fossify.commons.views.MyCompatRadioButton
                 android:id="@+id/dialog_radio_folder_count_none"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

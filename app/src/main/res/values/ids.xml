@@ -3,4 +3,5 @@
     <item name="expressive_selection_key" type="id" />
     <item name="expressive_badge" type="id" />
     <item name="expressive_chevron" type="id" />
+    <item name="expressive_overflow_installed" type="id" />
 </resources>

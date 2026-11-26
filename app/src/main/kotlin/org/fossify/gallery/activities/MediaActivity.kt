@@ -95,7 +95,9 @@ import org.fossify.gallery.helpers.GridSpacingItemDecoration
 import org.fossify.gallery.helpers.IS_IN_RECYCLE_BIN
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MediaFetcher
+import java.util.concurrent.ConcurrentHashMap
 import org.fossify.gallery.helpers.FastScanner
+import org.fossify.gallery.helpers.MediaCache
 import org.fossify.gallery.helpers.PendingRemovals
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PICKED_PATHS
@@ -126,6 +128,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private var mIsGetVideoIntent = false
     private var mIsGetAnyIntent = false
     private var mIsGettingMedia = false
+    private var mReloadRequested = false
+    private val mDeleteGuard = ConcurrentHashMap<String, Long>()
     private var mAllowPickingMultiple = false
     private var mShowAll = false
     private var mLoadedInitialPhotos = false
@@ -306,7 +310,6 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             config.tempSkipDeleteConfirmation = false
             config.tempSkipRecycleBin = false
             unregisterFileUpdateListener()
-            GalleryDatabase.destroyInstance()
         }
 
         mTempShowHiddenHandler.removeCallbacksAndMessages(null)
@@ -677,8 +680,18 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
     }
 
+    private fun mediaCacheKey() = if (mShowAll) SHOW_ALL else mPath
+
+    private fun mediaCacheSignature(): String {
+        val key = mediaCacheKey()
+        return "${config.getFolderSorting(key)}|${config.getFolderGrouping(key)}|${config.filterMedia}|" +
+            "${config.shouldShowHidden}|${config.showThumbnailVideoDuration}|$mIsGetImageIntent|$mIsGetVideoIntent"
+    }
+
     private fun getMedia() {
         if (mIsGettingMedia) {
+            // do not lose the change, load again as soon as the current load finished
+            mReloadRequested = true
             return
         }
 
@@ -686,23 +699,61 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         if (mLoadedInitialPhotos) {
             startAsyncTask()
         } else {
-            getCachedMedia(
-                mPath,
-                mIsGetVideoIntent && !mIsGetImageIntent,
-                mIsGetImageIntent && !mIsGetVideoIntent
-            ) {
-                if (it.isEmpty()) {
-                    runOnUiThread {
-                        binding.mediaRefreshLayout.isRefreshing = true
-                    }
-                } else {
-                    gotMedia(it, true)
+            val remembered = MediaCache.get(mediaCacheKey(), mediaCacheSignature())
+            if (remembered != null) {
+                ensureBackgroundThread {
+                    gotMedia(remembered, true)
+                    mIsGettingMedia = true
+                    startAsyncTask()
                 }
-                startAsyncTask()
+            } else {
+                getCachedMedia(
+                    mPath,
+                    mIsGetVideoIntent && !mIsGetImageIntent,
+                    mIsGetImageIntent && !mIsGetVideoIntent
+                ) {
+                    if (it.isEmpty()) {
+                        runOnUiThread {
+                            binding.mediaRefreshLayout.isRefreshing = true
+                        }
+                    } else {
+                        gotMedia(it, true)
+                        mIsGettingMedia = true
+                    }
+                    startAsyncTask()
+                }
             }
         }
 
         mLoadedInitialPhotos = true
+    }
+
+    // Files deleted a moment ago must not come back through a scan that started before the delete.
+    private fun dropRecentlyDeleted(media: ArrayList<ThumbnailItem>): ArrayList<ThumbnailItem> {
+        if (mDeleteGuard.isEmpty()) {
+            return media
+        }
+
+        val now = System.currentTimeMillis()
+        mDeleteGuard.entries.removeIf { it.value < now }
+        if (mDeleteGuard.isEmpty() || media.none { it is Medium && mDeleteGuard.containsKey(it.path) }) {
+            return media
+        }
+
+        val result = ArrayList<ThumbnailItem>(media.size)
+        var pendingSection: ThumbnailItem? = null
+        media.forEach { item ->
+            when {
+                item !is Medium -> pendingSection = item
+                mDeleteGuard.containsKey(item.path) -> {}
+                else -> {
+                    pendingSection?.let { result.add(it) }
+                    pendingSection = null
+                    result.add(item)
+                }
+            }
+        }
+        return result
     }
 
     private fun startAsyncTask() {
@@ -1027,10 +1078,14 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         )
     }
 
-    private fun gotMedia(media: ArrayList<ThumbnailItem>, isFromCache: Boolean) {
+    private fun gotMedia(rawMedia: ArrayList<ThumbnailItem>, isFromCache: Boolean) {
+        val media = dropRecentlyDeleted(rawMedia)
         mIsGettingMedia = false
         checkLastMediaChanged()
         mMedia = media
+        if (!isFromCache) {
+            MediaCache.put(mediaCacheKey(), mediaCacheSignature(), media)
+        }
 
         runOnUiThread {
             binding.loadingIndicator.hide()
@@ -1056,6 +1111,15 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 } catch (e: Exception) {
                 }
             }.start()
+        }
+
+        if (mReloadRequested) {
+            mReloadRequested = false
+            runOnUiThread {
+                if (!isDestroyed && !isFinishing) {
+                    getMedia()
+                }
+            }
         }
     }
 
@@ -1091,6 +1155,9 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         val deleteEmptyFolder = config.deleteEmptyFolders
                 && !FileDirItem(folderPath, folderPath.getFilenameFromPath(), true).isDownloadsFolder()
 
+        val guardUntil = System.currentTimeMillis() + 20_000L
+        paths.forEach { mDeleteGuard[it] = guardUntil }
+        MediaCache.remove(mediaCacheKey())
         FastScanner.beginDelete(this, paths)
         mMedia.removeAll { it is Medium && it.path in deletedPaths }
         if (folderEmptied) {
@@ -1108,6 +1175,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                     doneItems.add(path)
                 } else {
                     failedCount++
+                    mDeleteGuard.remove(path)
                 }
             }
 
@@ -1137,12 +1205,14 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 PendingRemovals.remove(folderPath)
             }
 
-            if (failedCount > 0) {
-                Handler(Looper.getMainLooper()).post {
+            // always rescan once the work is done, so the grid, section counts and failed files are right
+            Handler(Looper.getMainLooper()).post {
+                if (failedCount > 0) {
                     appContext.toast(org.fossify.commons.R.string.unknown_error_occurred)
-                    if (!isDestroyed && !isFinishing) {
-                        getMedia()
-                    }
+                }
+
+                if (!isDestroyed && !isFinishing && mMedia.any { it is Medium }) {
+                    getMedia()
                 }
             }
         }.start()
@@ -1158,6 +1228,9 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     }
 
     private fun deleteFilesLegacy(filtered: ArrayList<FileDirItem>, toRecycleBin: Boolean) {
+        val guardUntil = System.currentTimeMillis() + 20_000L
+        filtered.forEach { mDeleteGuard[it.path] = guardUntil }
+        MediaCache.remove(mediaCacheKey())
         if (toRecycleBin) {
             val movingItems = resources.getQuantityString(
                 org.fossify.commons.R.plurals.moving_items_into_bin,
@@ -1170,7 +1243,9 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 if (it) {
                     deleteFilteredFiles(filtered)
                 } else {
+                    filtered.forEach { item -> mDeleteGuard.remove(item.path) }
                     toast(org.fossify.commons.R.string.unknown_error_occurred)
+                    getMedia()
                 }
             }
         } else {
@@ -1191,7 +1266,9 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private fun deleteFilteredFiles(filtered: ArrayList<FileDirItem>) {
         deleteFiles(filtered) {
             if (!it) {
+                filtered.forEach { item -> mDeleteGuard.remove(item.path) }
                 toast(org.fossify.commons.R.string.unknown_error_occurred)
+                getMedia()
                 return@deleteFiles
             }
 

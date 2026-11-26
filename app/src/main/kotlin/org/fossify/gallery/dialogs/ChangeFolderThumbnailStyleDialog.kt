@@ -11,8 +11,10 @@ import org.fossify.commons.extensions.*
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.toItemBinding
 import org.fossify.gallery.databinding.DialogChangeFolderThumbnailStyleBinding
+import org.fossify.gallery.databinding.DirectoryItemGridBelowBinding
 import org.fossify.gallery.databinding.DirectoryItemGridRoundedCornersBinding
 import org.fossify.gallery.databinding.DirectoryItemGridSquareBinding
+import org.fossify.gallery.extensions.applyExpressiveDialogTiles
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.*
 
@@ -27,6 +29,7 @@ class ChangeFolderThumbnailStyleDialog(val activity: BaseSimpleActivity, val cal
             .setPositiveButton(org.fossify.commons.R.string.ok, this)
             .setNegativeButton(org.fossify.commons.R.string.cancel, null)
             .apply {
+                binding.root.applyExpressiveDialogTiles()
                 activity.setupDialogStuff(binding.root, this) {
                     setupStyle()
                     setupMediaCount()
@@ -58,6 +61,7 @@ class ChangeFolderThumbnailStyleDialog(val activity: BaseSimpleActivity, val cal
         val countBtn = when (config.showFolderMediaCount) {
             FOLDER_MEDIA_CNT_LINE -> binding.dialogRadioFolderCountLine
             FOLDER_MEDIA_CNT_BRACKETS -> binding.dialogRadioFolderCountBrackets
+            FOLDER_MEDIA_CNT_BELOW -> binding.dialogRadioFolderCountBelow
             else -> binding.dialogRadioFolderCountNone
         }
 
@@ -68,21 +72,28 @@ class ChangeFolderThumbnailStyleDialog(val activity: BaseSimpleActivity, val cal
         val photoCount = 36
         val folderName = "Camera"
         binding.apply {
-            val useRoundedCornersLayout = binding.dialogRadioFolderStyle.checkedRadioButtonId == R.id.dialog_radio_folder_rounded_corners
-            binding.dialogFolderSampleHolder.removeAllViews()
+            val showBelow = dialogRadioFolderCountHolder.checkedRadioButtonId == R.id.dialog_radio_folder_count_below
+            for (i in 0 until dialogRadioFolderStyle.childCount) {
+                val button = dialogRadioFolderStyle.getChildAt(i)
+                button.isEnabled = !showBelow
+                button.alpha = if (showBelow) 0.4f else 1f
+            }
 
-            val sampleBinding = if (useRoundedCornersLayout) {
-                DirectoryItemGridRoundedCornersBinding.inflate(activity.layoutInflater).toItemBinding()
-            } else {
-                DirectoryItemGridSquareBinding.inflate(activity.layoutInflater).toItemBinding()
+            val useRoundedCornersLayout = showBelow || dialogRadioFolderStyle.checkedRadioButtonId == R.id.dialog_radio_folder_rounded_corners
+            dialogFolderSampleHolder.removeAllViews()
+
+            val sampleBinding = when {
+                showBelow -> DirectoryItemGridBelowBinding.inflate(activity.layoutInflater).toItemBinding()
+                useRoundedCornersLayout -> DirectoryItemGridRoundedCornersBinding.inflate(activity.layoutInflater).toItemBinding()
+                else -> DirectoryItemGridSquareBinding.inflate(activity.layoutInflater).toItemBinding()
             }
             val sampleView = sampleBinding.root
-            binding.dialogFolderSampleHolder.addView(sampleView)
+            dialogFolderSampleHolder.addView(sampleView)
 
             sampleView.layoutParams.width = activity.resources.getDimension(R.dimen.sample_thumbnail_size).toInt()
             (sampleView.layoutParams as RelativeLayout.LayoutParams).addRule(RelativeLayout.CENTER_HORIZONTAL)
 
-            when (binding.dialogRadioFolderCountHolder.checkedRadioButtonId) {
+            when (dialogRadioFolderCountHolder.checkedRadioButtonId) {
                 R.id.dialog_radio_folder_count_line -> {
                     sampleBinding.dirName.text = folderName
                     sampleBinding.photoCnt.text = photoCount.toString()
@@ -92,6 +103,12 @@ class ChangeFolderThumbnailStyleDialog(val activity: BaseSimpleActivity, val cal
                 R.id.dialog_radio_folder_count_brackets -> {
                     sampleBinding.photoCnt.beGone()
                     sampleBinding.dirName.text = "$folderName ($photoCount)"
+                }
+
+                R.id.dialog_radio_folder_count_below -> {
+                    sampleBinding.dirName.text = folderName
+                    sampleBinding.photoCnt.text = activity.resources.getQuantityString(R.plurals.folder_items_count, photoCount, photoCount)
+                    sampleBinding.photoCnt.beVisible()
                 }
 
                 else -> {
@@ -125,6 +142,7 @@ class ChangeFolderThumbnailStyleDialog(val activity: BaseSimpleActivity, val cal
         val count = when (binding.dialogRadioFolderCountHolder.checkedRadioButtonId) {
             R.id.dialog_radio_folder_count_line -> FOLDER_MEDIA_CNT_LINE
             R.id.dialog_radio_folder_count_brackets -> FOLDER_MEDIA_CNT_BRACKETS
+            R.id.dialog_radio_folder_count_below -> FOLDER_MEDIA_CNT_BELOW
             else -> FOLDER_MEDIA_CNT_NONE
         }
 

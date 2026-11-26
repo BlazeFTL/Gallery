@@ -4,6 +4,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import org.fossify.commons.views.MySquareImageView
+import org.fossify.gallery.databinding.DirectoryItemGridBelowBinding
 import org.fossify.gallery.databinding.DirectoryItemGridRoundedCornersBinding
 import org.fossify.gallery.databinding.DirectoryItemGridSquareBinding
 import org.fossify.gallery.databinding.DirectoryItemListBinding
@@ -21,6 +22,7 @@ interface DirectoryItemBinding {
     val dirLocation: ImageView
     val dirDragHandle: ImageView
     val dirDragHandleWrapper: ViewGroup?
+    val dirLocationChip: TextView? get() = null
 }
 
 class ListDirectoryItemBinding(val binding: DirectoryItemListBinding) : DirectoryItemBinding {
@@ -73,3 +75,21 @@ class GridDirectoryItemRoundedCornersBinding(val binding: DirectoryItemGridRound
 }
 
 fun DirectoryItemGridRoundedCornersBinding.toItemBinding() = GridDirectoryItemRoundedCornersBinding(this)
+
+class GridDirectoryItemBelowBinding(val binding: DirectoryItemGridBelowBinding) : DirectoryItemBinding {
+    override val root: ViewGroup = binding.root
+    override val dirThumbnail: MySquareImageView = binding.dirThumbnail
+    override val dirPath: TextView? = null
+    override val dirCheck: ImageView = binding.dirCheck
+    override val dirHolder: ViewGroup = binding.dirHolder
+    override val photoCnt: TextView = binding.photoCnt
+    override val dirName: TextView = binding.dirName
+    override val dirLock: ImageView = binding.dirLock
+    override val dirPin: ImageView = binding.dirPin
+    override val dirLocation: ImageView = binding.dirLocation
+    override val dirDragHandle: ImageView = binding.dirDragHandle
+    override val dirDragHandleWrapper: ViewGroup = binding.dirDragHandleWrapper
+    override val dirLocationChip: TextView = binding.dirLocationChip
+}
+
+fun DirectoryItemGridBelowBinding.toItemBinding() = GridDirectoryItemBelowBinding(this)

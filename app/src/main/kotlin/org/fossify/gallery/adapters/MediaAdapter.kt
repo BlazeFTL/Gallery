@@ -70,6 +70,7 @@ import org.fossify.gallery.extensions.rescanFolderMedia
 import org.fossify.gallery.extensions.restoreRecycleBinPaths
 import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.setAs
+import org.fossify.gallery.extensions.applySelectionBadge
 import org.fossify.gallery.extensions.setExpressiveSelected
 import org.fossify.gallery.extensions.shareMediaPaths
 import org.fossify.gallery.extensions.shareMediumPath
@@ -117,6 +118,7 @@ class MediaAdapter(
     private val isListViewType = viewType == VIEW_TYPE_LIST
     private var rotatedImagePaths = ArrayList<String>()
     private var currentMediaHash = media.hashCode()
+    private var selectionActive = false
     private val hasOTGConnected = activity.hasOTGConnected()
 
     private var scrollHorizontally = config.scrollHorizontally
@@ -248,9 +250,15 @@ class MediaAdapter(
 
     override fun getItemKeyPosition(key: Int) = media.indexOfFirst { (it as? Medium)?.path?.hashCode() == key }
 
-    override fun onActionModeCreated() {}
+    override fun onActionModeCreated() {
+        selectionActive = true
+        notifyDataSetChanged()
+    }
 
-    override fun onActionModeDestroyed() {}
+    override fun onActionModeDestroyed() {
+        selectionActive = false
+        notifyDataSetChanged()
+    }
 
     override fun onViewRecycled(holder: ViewHolder) {
         super.onViewRecycled(holder)
@@ -714,10 +722,14 @@ class MediaAdapter(
                 videoDuration?.setTextColor(textColor)
             }
 
-            mediumCheck.beVisibleIf(isSelected)
-            if (isSelected) {
-                mediumCheck.background?.applyColorFilter(properPrimaryColor)
-                mediumCheck.applyColorFilter(contrastColor)
+            if (isListViewType) {
+                mediumCheck.beVisibleIf(isSelected)
+                if (isSelected) {
+                    mediumCheck.background?.applyColorFilter(properPrimaryColor)
+                    mediumCheck.applyColorFilter(contrastColor)
+                }
+            } else {
+                mediumCheck.applySelectionBadge(isSelected, selectionActive || selectedKeys.isNotEmpty(), properPrimaryColor, contrastColor)
             }
 
             if (!isListViewType) {
