@@ -97,6 +97,18 @@ class MediaFetcher(val context: Context) {
     ): ArrayList<Medium> {
         FastScanner.refreshDir(context, curPath)
         val media = FastScanner.getFolderMedia(context, curPath, isPickImage, isPickVideo, getProperFileSize)
+        // only the rows of this folder are needed, reading the whole table for one album is slow
+        val folderDateTakens = if (getProperDateTaken) {
+            try {
+                val rows = HashMap<String, Long>()
+                context.dateTakensDB.getDateTakensFromPath(curPath).forEach { rows[it.fullPath] = it.taken }
+                rows
+            } catch (ignored: Exception) {
+                dateTakens
+            }
+        } else {
+            dateTakens
+        }
         val favorites = if (favoritePaths.isEmpty()) null else favoritePaths.toHashSet()
         var storedMedia: Map<String, Medium>? = null
         for (medium in media) {
@@ -109,7 +121,7 @@ class MediaFetcher(val context: Context) {
             }
 
             if (getProperDateTaken) {
-                dateTakens[medium.path]?.let { medium.taken = it }
+                folderDateTakens[medium.path]?.let { medium.taken = it }
             }
 
             if (getVideoDurations && medium.isVideo()) {

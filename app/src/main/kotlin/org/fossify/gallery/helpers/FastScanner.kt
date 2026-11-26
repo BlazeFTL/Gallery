@@ -203,42 +203,59 @@ object FastScanner {
             return false
         }
 
-        val changed = refreshLock.withLock {
-            val old = index.dirs[path]
-            val dir = File(path)
-            if (!dir.isDirectory) {
-                if (old != null) {
-                    removeSubtree(path)
-                    return@withLock true
-                }
-                return@withLock false
-            }
+        // a long walk may be running, a single album must not wait for it: list just this folder instead
+        val locked = try {
+            refreshLock.tryLock(150, TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+            false
+        }
 
-            if (old != null && !old.isRacy && old.mtime == dir.lastModified()) {
-                return@withLock false
+        val changed = if (locked) {
+            try {
+                refreshDirNow(path)
+            } finally {
+                refreshLock.unlock()
             }
-
-            val node = listDirectory(path, old, false, System.currentTimeMillis()) ?: return@withLock false
-            val known = index.dirs
-            val newSubs = node.subdirs.map { joinPath(path, it) }.filter { !known.containsKey(it) }
-            val extra = if (newSubs.isEmpty()) emptyMap() else Walker.walkFresh(newSubs)
-            val vanished = old?.subdirs?.filter { !node.subdirs.contains(it) }?.map { joinPath(path, it) } ?: emptyList()
-
-            synchronized(indexLock) {
-                val copy = HashMap(index.dirs)
-                copy[path] = node
-                copy.putAll(extra)
-                vanished.forEach { gone -> copy.keys.removeAll { it == gone || it.startsWith("$gone/") } }
-                index = ScanIndex(copy)
-            }
-            saveAsync()
-            old == null || extra.isNotEmpty() || vanished.isNotEmpty() || !sameContent(old, node)
+        } else {
+            refreshDirNow(path)
         }
 
         if (changed) {
             syncWatchers()
         }
         return changed
+    }
+
+    private fun refreshDirNow(path: String): Boolean {
+        val old = index.dirs[path]
+        val dir = File(path)
+        if (!dir.isDirectory) {
+            if (old != null) {
+                removeSubtree(path)
+                return true
+            }
+            return false
+        }
+
+        if (old != null && !old.isRacy && old.mtime == dir.lastModified()) {
+            return false
+        }
+
+        val node = listDirectory(path, old, false, System.currentTimeMillis()) ?: return false
+        val known = index.dirs
+        val newSubs = node.subdirs.map { joinPath(path, it) }.filter { !known.containsKey(it) }
+        val extra = if (newSubs.isEmpty()) emptyMap() else Walker.walkFresh(newSubs)
+        val vanished = old?.subdirs?.filter { !node.subdirs.contains(it) }?.map { joinPath(path, it) } ?: emptyList()
+
+        synchronized(indexLock) {
+            val copy = HashMap(index.dirs)
+            copy[path] = node
+            copy.putAll(extra)
+            vanished.forEach { gone -> copy.keys.removeAll { it == gone || it.startsWith("$gone/") } }
+            index = ScanIndex(copy)
+        }
+        saveAsync()
+        return old == null || extra.isNotEmpty() || vanished.isNotEmpty() || !sameContent(old, node)
     }
 
     private fun sameContent(a: DirNode, b: DirNode): Boolean {

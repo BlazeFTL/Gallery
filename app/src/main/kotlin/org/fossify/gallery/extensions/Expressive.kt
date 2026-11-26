@@ -11,6 +11,7 @@ import android.graphics.PorterDuffColorFilter
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Build
@@ -32,6 +33,7 @@ import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.view.menu.MenuBuilder
 import androidx.appcompat.view.menu.MenuItemImpl
+import androidx.appcompat.widget.ActionMenuView
 import androidx.appcompat.widget.Toolbar
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.graphics.ColorUtils
@@ -193,10 +195,95 @@ fun Activity.applyExpressivePopupTheme() {
 /** Viewer toolbars use the same themed popup as everything else. */
 fun Toolbar.applyExpressiveDarkMenu() = applyExpressivePopup()
 
-/** Action mode (selection) toolbar overflow. Call from prepareActionMode. */
+/** Action mode (selection) bar: Expressive look and the themed overflow popup. Call from prepareActionMode. */
 fun Activity.installExpressiveActionModeOverflow(menu: Menu) {
     val bar = findViewById<ViewGroup>(androidx.appcompat.R.id.action_mode_bar) ?: return
-    bar.post { bar.installExpressiveOverflow { menu } }
+    val apply = Runnable {
+        bar.styleExpressiveActionBar()
+        bar.installExpressiveOverflow { bar.findActionMenuView()?.menu ?: menu }
+    }
+    bar.post(apply)
+    // the bar creates its buttons a moment after the menu was prepared
+    bar.postDelayed(apply, 120L)
+}
+
+private fun ViewGroup.findActionMenuView(): ActionMenuView? {
+    for (i in 0 until childCount) {
+        val v = getChildAt(i)
+        if (v is ActionMenuView) return v
+        if (v is ViewGroup) v.findActionMenuView()?.let { return it }
+    }
+    return null
+}
+
+/** Rounded tonal selection bar with a close cross, a clear count and round icon buttons. */
+@SuppressLint("RestrictedApi")
+private fun ViewGroup.styleExpressiveActionBar() {
+    val ctx = context
+    val density = resources.displayMetrics.density
+    fun dp(v: Float) = (v * density).toInt()
+    val textColor = ctx.getProperTextColor()
+    val container = ColorUtils.blendARGB(ctx.getProperBackgroundColor(), ctx.getProperPrimaryColor(), 0.22f)
+
+    background = GradientDrawable().apply {
+        cornerRadius = dp(28f).toFloat()
+        setColor(container)
+    }
+    (layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+        if (lp.leftMargin != dp(12f)) {
+            lp.setMargins(dp(12f), dp(8f), dp(12f), dp(4f))
+            layoutParams = lp
+        }
+    }
+
+    (findViewById<View>(androidx.appcompat.R.id.action_mode_close_button) as? ImageView)?.apply {
+        setImageResource(R.drawable.ic_cross_vector)
+        imageTintList = ColorStateList.valueOf(textColor)
+    }
+
+    for (i in 0 until childCount) {
+        (getChildAt(i) as? TextView)?.apply {
+            setTextColor(textColor)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+    }
+
+    fun chip(): RippleDrawable {
+        val fill = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(ColorUtils.setAlphaComponent(textColor, 22))
+        }
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.WHITE)
+        }
+        return RippleDrawable(
+            ColorStateList.valueOf(ColorUtils.setAlphaComponent(textColor, 40)),
+            InsetDrawable(fill, dp(4f), dp(8f), dp(4f), dp(8f)),
+            InsetDrawable(mask, dp(4f), dp(8f), dp(4f), dp(8f))
+        )
+    }
+
+    val menuView = findActionMenuView() ?: return
+    for (i in 0 until menuView.childCount) {
+        val button = menuView.getChildAt(i)
+        button.background = chip()
+        if (button is ImageView && button.javaClass.simpleName == "OverflowMenuButton") {
+            button.imageTintList = ColorStateList.valueOf(textColor)
+        }
+    }
+
+    (menuView.menu as? MenuBuilder)?.let { real ->
+        real.setOptionalIconsVisible(true)
+        real.visibleItems.forEach { item ->
+            item.icon?.mutate()?.let { icon ->
+                // the library tinted these for a dark bar with a color filter, which wins over a tint
+                icon.colorFilter = null
+                icon.setTint(textColor)
+            }
+        }
+    }
 }
 
 /**
@@ -526,7 +613,10 @@ fun ViewGroup.installExpressiveOverflow(menuProvider: () -> Menu?) {
     fun tryInstall(): Boolean {
         val button = host.findOverflowButton() ?: return false
         button.setOnClickListener { anchor ->
-            val owner = menuProvider() as? MenuBuilder ?: return@setOnClickListener
+            // the action mode hands out a wrapper of its menu, the real one sits in the bar
+            val owner = (menuProvider() as? MenuBuilder)
+                ?: (host.findActionMenuView()?.menu as? MenuBuilder)
+                ?: return@setOnClickListener
             var items: List<MenuItem> = owner.nonActionItems.filter { it.isVisible }
             if (items.isEmpty()) {
                 items = owner.visibleItems.filter { !it.isActionButton && it.isVisible }

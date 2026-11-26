@@ -35,7 +35,9 @@ class GetMediaAsynctask(
         val favoritePaths = context.getFavoritePaths()
         val getVideoDurations = context.config.showThumbnailVideoDuration
         val lastModifieds = if (getProperLastModified) mediaFetcher.getLastModifieds() else HashMap()
-        val dateTakens = if (getProperDateTaken) mediaFetcher.getDateTakens() else HashMap()
+        // the native scan of one album reads the date taken rows of that folder itself
+        val needsAllDateTakens = getProperDateTaken && (showAll || !FastScanner.isEnabled(context))
+        val dateTakens = if (needsAllDateTakens) mediaFetcher.getDateTakens() else HashMap()
 
         val media = if (showAll) {
             val foldersToScan = mediaFetcher.getFoldersToScan().filter { it != RECYCLE_BIN && it != FAVORITES && !context.config.isFolderProtected(it) }

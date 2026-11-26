@@ -939,8 +939,8 @@ fun Context.getCachedMedia(
     callback: (ArrayList<ThumbnailItem>) -> Unit
 ) {
     ensureBackgroundThread {
-        if (path != FAVORITES && path != RECYCLE_BIN && FastScanner.isEnabled(this)) {
-            // the native scan is as fast as the cache, skip the stale database rows
+        val nativeAlbum = path.isNotEmpty() && path != FAVORITES && path != RECYCLE_BIN && FastScanner.isEnabled(this)
+        if (path.isEmpty() && FastScanner.isEnabled(this)) {
             callback(ArrayList())
             return@ensureBackgroundThread
         }
@@ -975,7 +975,11 @@ fun Context.getCachedMedia(
         val shouldShowHidden = config.shouldShowHidden
         foldersToScan.filter { path.isNotEmpty() || !config.isFolderProtected(it) }.forEach {
             try {
-                val currMedia = mediaDB.getMediaFromPath(it)
+                var currMedia = mediaDB.getMediaFromPath(it)
+                if (nativeAlbum) {
+                    // the rows may be old, files that are gone must not show up for a moment
+                    currMedia = currMedia.filter { medium -> File(medium.path).exists() }
+                }
                 media.addAll(currMedia)
             } catch (ignored: Exception) {
             }

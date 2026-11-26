@@ -3,6 +3,7 @@ package org.fossify.gallery.activities
 import android.app.WallpaperManager
 import android.content.Intent
 import android.graphics.Bitmap
+import android.os.AsyncTask
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -789,7 +790,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             }
         }
 
-        mCurrAsyncTask!!.execute()
+        // the serial default executor would queue this behind an older load that is still waiting
+        mCurrAsyncTask!!.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR)
     }
 
     private fun isDirEmpty(): Boolean {
