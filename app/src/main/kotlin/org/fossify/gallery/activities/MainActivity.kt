@@ -89,6 +89,7 @@ import org.fossify.gallery.extensions.addTempFolderIfNeeded
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.createDirectoryFromMedia
 import org.fossify.gallery.extensions.createDirectoryFromSummary
+import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.getCachedDirectories
 import org.fossify.gallery.extensions.getCachedMedia
@@ -181,6 +182,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private var mLatestMediaDateId = 0L
     private var mForceFullScan = false
     private var mReloadRequested = false
+    private var mFullWalkPending = true
+    private var mGetDirsStartedAt = 0L
+    private val mDirsGeneration = java.util.concurrent.atomic.AtomicInteger()
 
     // used at "Group direct subfolders" for navigation
     private var mCurrentPathPrefix = ""
@@ -242,8 +246,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         )
 
         binding.directoriesRefreshLayout.setOnRefreshListener {
-            // pulling down re-checks every folder and file, not just the ones whose timestamps changed
+            // pulling down looks at every folder of the storage, the folders that matter most show up first
             mForceFullScan = true
+            mFullWalkPending = true
             getDirectories()
         }
         storeStateVariables()
@@ -354,6 +359,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         if (!binding.mainMenu.isSearchOpen) {
             refreshMenuItems()
+            // coming back from another app: look at the whole storage again. Coming back from an album of this
+            // app, the folders that matter most are enough.
+            if (FastScanner.lastAwayMs > 1500L) {
+                mFullWalkPending = true
+            }
             tryLoadGallery()
         }
 
@@ -649,7 +659,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     }
 
     private fun getDirectories() {
-        if (mIsGettingDirs) {
+        val startedAt = System.currentTimeMillis()
+        if (mIsGettingDirs && startedAt - mGetDirsStartedAt < 8000L) {
             // do not lose the change, load again as soon as the current load finished
             mReloadRequested = true
             return
@@ -657,8 +668,18 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         mShouldStopFetching = true
         mIsGettingDirs = true
+        mGetDirsStartedAt = startedAt
         val getImages = mIsPickImageIntent || mIsGetImageContentIntent
         val getVideos = mIsPickVideoIntent || mIsGetVideoContentIntent
+
+        if (mLoadedInitialPhotos && FastScanner.isEnabled(this) && FastScanner.isWarm(this)) {
+            // the list that is on screen is the starting point, no database round trip before the first update
+            val known = ArrayList(mDirs)
+            ensureBackgroundThread {
+                gotDirectories(addTempFolderIfNeeded(known))
+            }
+            return
+        }
 
         paintDirectorySnapshot(getImages && !getVideos, getVideos && !getImages)
         getCachedDirectories(getVideos && !getImages, getImages && !getVideos) {
@@ -841,6 +862,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             }?.mapTo(itemsToDelete) { it.toFileDirItem(applicationContext) }
         }
 
+        if (itemsToDelete.isNotEmpty() && FastScanner.canDeleteDirectly(this, itemsToDelete.map { it.path })) {
+            deleteFoldersNatively(itemsToDelete.map { it.path }, folders)
+            return
+        }
+
         if (config.useRecycleBin && !config.tempSkipRecycleBin) {
             val pathsToDelete = ArrayList<String>()
             itemsToDelete.mapTo(pathsToDelete) { it.path }
@@ -855,6 +881,61 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         } else {
             deleteFilteredFileDirItems(itemsToDelete, folders)
         }
+    }
+
+    // The list is updated first (the albums vanish at once), files and folders are removed in the background.
+    private fun deleteFoldersNatively(paths: List<String>, folders: ArrayList<File>) {
+        val toRecycleBin = config.useRecycleBin && !config.tempSkipRecycleBin
+        val binRoot = if (toRecycleBin) recycleBinPath else null
+        val deleteEmptyFolders = config.deleteEmptyFolders
+        val appContext = applicationContext
+        val folderPaths = folders.map { it.absolutePath }
+
+        folderPaths.forEach { PendingRemovals.add(it) }
+        FastScanner.beginDelete(this, paths)
+        getDirectories()
+
+        Thread {
+            val codes = FastScanner.delete(paths, binRoot)
+            FastScanner.finishDelete(paths, codes)
+            val doneItems = ArrayList<String>()
+            paths.forEachIndexed { index, path ->
+                if (codes.getOrElse(index) { -1 } == 0) {
+                    doneItems.add(path)
+                }
+            }
+
+            try {
+                if (toRecycleBin) {
+                    val now = System.currentTimeMillis()
+                    doneItems.forEach { appContext.mediaDB.updateDeleted("$RECYCLE_BIN$it", now, it) }
+                } else {
+                    doneItems.forEach { appContext.deleteDBPath(it) }
+                }
+            } catch (ignored: Exception) {
+            }
+
+            FastScanner.removeFromMediaStore(appContext, doneItems)
+            folderPaths.forEach { path ->
+                if (deleteEmptyFolders && !path.isDownloadsFolder()) {
+                    FastScanner.removeDirIfEmpty(path)
+                }
+
+                if (!File(path).exists()) {
+                    try {
+                        appContext.directoryDB.deleteDirPath(path)
+                    } catch (ignored: Exception) {
+                    }
+                }
+                PendingRemovals.remove(path)
+            }
+
+            runOnUiThread {
+                if (!isDestroyed && !isFinishing) {
+                    getDirectories()
+                }
+            }
+        }.start()
     }
 
     private fun deleteFilteredFileDirItems(
@@ -1477,55 +1558,94 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         mDirs = dirs.clone() as ArrayList<Directory>
     }
 
+    // Folder list straight from the in-memory index. Files that are being deleted are already hidden in it.
+    private fun buildNativeDirs(imagesOnly: Boolean, videosOnly: Boolean): ArrayList<Directory> {
+        val albumCovers = config.parseAlbumCovers()
+        val hiddenString = getString(R.string.hidden)
+        val getProperFileSize = config.directorySorting and SORT_BY_SIZE != 0
+        val result = ArrayList<Directory>()
+        FastScanner.getSummaries(this, imagesOnly, videosOnly).forEach { summary ->
+            if (!PendingRemovals.contains(summary.path)) {
+                result.add(createDirectoryFromSummary(summary, albumCovers, hiddenString, getProperFileSize))
+            }
+        }
+        return result
+    }
+
     // Rust scanner flow: one native walk (finds hidden / .nomedia trees MediaStore never indexes),
     // folder summaries computed natively, no per-file work on the Kotlin side.
     private fun updateDirectoriesNative(cachedDirs: ArrayList<Directory>) {
-        val forceFull = mForceFullScan
+        val forceDateSync = mForceFullScan
         mForceFullScan = false
+        val fullWalk = mFullWalkPending
+        mFullWalkPending = false
+        val generation = mDirsGeneration.incrementAndGet()
         val getImages = mIsPickImageIntent || mIsGetImageContentIntent
         val getVideos = mIsPickVideoIntent || mIsGetVideoContentIntent
         val getImagesOnly = getImages && !getVideos
         val getVideosOnly = getVideos && !getImages
-        val hiddenString = getString(R.string.hidden)
-        val albumCovers = config.parseAlbumCovers()
         val getProperFileSize = config.directorySorting and SORT_BY_SIZE != 0
         val tempFolderPath = config.tempFolderPath
+        val albumCovers = config.parseAlbumCovers()
+        val hiddenString = getString(R.string.hidden)
 
-        FastScanner.refresh(this, forceFull)
+        // 1. the folders that matter most (holding media, top levels of the storage): milliseconds, so new
+        // downloads, deleted photos and removed albums are on screen at once
+        val warm = FastScanner.isWarm(this)
+        if (warm) {
+            FastScanner.quickRefresh(this)
+        } else {
+            FastScanner.refresh(this, false)
+        }
+
         if (isDestroyed || isFinishing) {
             return
         }
 
-        val newDirs = ArrayList<Directory>()
-        FastScanner.getSummaries(this, getImagesOnly, getVideosOnly).forEach { summary ->
-            if (!PendingRemovals.contains(summary.path)) {
-                newDirs.add(createDirectoryFromSummary(summary, albumCovers, hiddenString, getProperFileSize))
-            }
-        }
+        val newDirs = buildNativeDirs(getImagesOnly, getVideosOnly)
+        val snapshotSignature = directorySnapshotSignature(getImagesOnly, getVideosOnly)
 
         // show the scanned folders at once with the Favorites and Recycle bin entries of the last run,
         // the slower lookups of those two follow below and refresh the list only if something changed
-        val snapshotSignature = directorySnapshotSignature(getImagesOnly, getVideosOnly)
-        val quickDirs = ArrayList<Directory>(newDirs)
-        cachedDirs.filter { it.areFavorites() || (it.isRecycleBin() && config.showRecycleBinAtFolders) }.forEach { special ->
-            val hideFavorites = special.areFavorites()
-                    && !config.shouldShowHidden
-                    && special.tmb.getFilenameFromPath().startsWith('.')
-            if (!hideFavorites) {
-                quickDirs.add(special)
+        fun paintQuick() {
+            val quickDirs = ArrayList<Directory>(newDirs)
+            cachedDirs.filter { it.areFavorites() || (it.isRecycleBin() && config.showRecycleBinAtFolders) }.forEach { special ->
+                val hideFavorites = special.areFavorites()
+                        && !config.shouldShowHidden
+                        && special.tmb.getFilenameFromPath().startsWith('.')
+                if (!hideFavorites) {
+                    quickDirs.add(special)
+                }
             }
-        }
-        if (tempFolderPath.isNotEmpty() && quickDirs.none { it.path == tempFolderPath }) {
-            cachedDirs.firstOrNull { it.path == tempFolderPath }?.let { quickDirs.add(it) }
+
+            if (tempFolderPath.isNotEmpty() && quickDirs.none { it.path == tempFolderPath }) {
+                cachedDirs.firstOrNull { it.path == tempFolderPath }?.let { quickDirs.add(it) }
+            }
+
+            mLoadedInitialPhotos = true
+            mDirs = quickDirs.clone() as ArrayList<Directory>
+            setupAdapter(quickDirs)
+            runOnUiThread {
+                binding.directoriesRefreshLayout.isRefreshing = false
+                checkPlaceholderVisibility(quickDirs)
+            }
+            DirectoryCache.put(applicationContext, snapshotSignature, quickDirs)
         }
 
-        mLoadedInitialPhotos = true
-        setupAdapter(quickDirs)
-        runOnUiThread {
-            binding.directoriesRefreshLayout.isRefreshing = false
-            checkPlaceholderVisibility(quickDirs)
+        paintQuick()
+
+        // 2. the rest of the storage: finds folders created deep inside other folders, repaints only on a change
+        if (fullWalk && warm && FastScanner.refresh(this, false) > 0) {
+            if (isDestroyed || isFinishing) {
+                return
+            }
+
+            newDirs.clear()
+            newDirs.addAll(buildNativeDirs(getImagesOnly, getVideosOnly))
+            if (generation == mDirsGeneration.get()) {
+                paintQuick()
+            }
         }
-        DirectoryCache.put(applicationContext, snapshotSignature, quickDirs)
 
         // Favorites and the Recycle bin live in the database, use the regular loader for them
         val fetcher = MediaFetcher(applicationContext)
@@ -1584,13 +1704,17 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             cachedDirs.firstOrNull { it.path == tempFolderPath }?.let { newDirs.add(it) }
         }
 
-        mLoadedInitialPhotos = true
-        setupAdapter(newDirs)
-        runOnUiThread {
-            binding.directoriesRefreshLayout.isRefreshing = false
-            checkPlaceholderVisibility(newDirs)
+        // a newer load that started meanwhile paints the current state, this one only keeps the database in sync
+        val isCurrent = generation == mDirsGeneration.get()
+        if (isCurrent) {
+            mLoadedInitialPhotos = true
+            setupAdapter(newDirs)
+            runOnUiThread {
+                binding.directoriesRefreshLayout.isRefreshing = false
+                checkPlaceholderVisibility(newDirs)
+            }
+            DirectoryCache.put(applicationContext, snapshotSignature, newDirs)
         }
-        DirectoryCache.put(applicationContext, snapshotSignature, newDirs)
 
         val cachedByPath = cachedDirs.associateBy { it.path }
         val newPaths = newDirs.map { it.path }.toHashSet()
@@ -1620,7 +1744,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             config.everShownFolders = HashSet()
         }
 
-        mDirs = newDirs.clone() as ArrayList<Directory>
+        if (isCurrent) {
+            mDirs = newDirs.clone() as ArrayList<Directory>
+        }
+
         if (config.appRunCount > 1) {
             checkLastMediaChanged()
         }
@@ -1637,7 +1764,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         // MediaStore knows the EXIF date taken of indexed files, pull it in the background now and then
         val appContext = applicationContext
         Thread {
-            val changed = FastScanner.syncDateTakens(appContext, forceFull)
+            val changed = FastScanner.syncDateTakens(appContext, forceDateSync)
             if (changed > 0 && !isDestroyed && !isFinishing) {
                 runOnUiThread { getDirectories() }
             }
@@ -1853,6 +1980,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             return
         }
 
+        mLastMediaHandler.removeCallbacksAndMessages(null)
         mLastMediaHandler.postDelayed({
             ensureBackgroundThread {
                 // MediaStore never reports hidden folders, the native check compares folder timestamps instead

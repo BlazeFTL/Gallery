@@ -33,6 +33,7 @@ import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ForkJoinPool
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
@@ -52,7 +53,11 @@ object FastScanner {
     private const val DEFAULT_POLL_PERIOD = 3000L
     private const val REFRESH_MAX_AGE = 1500L
     private const val DEBOUNCE = 250L
-    private const val MAX_WATCHES = 4000
+    private const val HOT_DEPTH = 3
+    private const val BACKGROUND_WATCH_MS = 120_000L
+    private const val MEDIASTORE_REFRESH_GAP = 3000L
+    private const val SNAPSHOT_SAVE_DELAY = 2000L
+    private const val MAX_WATCHES = 2500
     private const val TOMBSTONE_TTL = 20_000L
     private const val DATE_TAKEN_SYNC_PERIOD = 6 * 60 * 60 * 1000L
     private const val SNAPSHOT_MAGIC = 0x47534958
@@ -100,7 +105,22 @@ object FastScanner {
 
     private val watchLock = Any()
     private var foregroundCount = 0
+    private var backgroundSince = 0L
+    private var stopTask: ScheduledFuture<*>? = null
+
+    /** How long the app was out of sight before the screen that is visible now came back (huge on a cold start). */
+    @Volatile
+    var lastAwayMs = Long.MAX_VALUE
+        private set
+    @Volatile
     private var watching = false
+    private val syncLock = Any()
+    private val syncScheduled = AtomicBoolean(false)
+
+    // creating watchers takes long, it must never delay the worker that handles changes or the screens
+    private val watchWorker = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "FastScannerWatch").apply { isDaemon = true }
+    }
     @Volatile
     private var appContext: Context? = null
     private var contentObserver: ContentObserver? = null
@@ -167,7 +187,7 @@ object FastScanner {
     fun refresh(context: Context, forceFull: Boolean = false): Int {
         ensureInit(context)
         val roots = getRoots(context)
-        return refreshLock.withLock {
+        val count = refreshLock.withLock {
             val old = index
             val result = Walker.walk(old, roots, true, forceFull)
             // every readable root yields at least its own node: an empty result means the storage could not be
@@ -185,9 +205,10 @@ object FastScanner {
             if (changed > 0) {
                 saveAsync()
             }
-            syncWatchers()
             changed
         }
+        scheduleSyncWatchers()
+        return count
     }
 
     fun refreshIfStale(context: Context) {
@@ -199,63 +220,145 @@ object FastScanner {
     /** Cheap single folder refresh. New sub folders are walked as well. Returns true when the content changed. */
     fun refreshDir(context: Context, path: String, ignoreFreshness: Boolean = false): Boolean {
         ensureInit(context)
-        if (!ignoreFreshness && System.currentTimeMillis() - lastRefreshAt < REFRESH_MAX_AGE) {
-            return false
+        val changed = applyDirChanges(listOf(path), true)
+        if (changed.isNotEmpty()) {
+            scheduleSyncWatchers()
         }
-
-        // a long walk may be running, a single album must not wait for it: list just this folder instead
-        val locked = try {
-            refreshLock.tryLock(150, TimeUnit.MILLISECONDS)
-        } catch (e: InterruptedException) {
-            false
-        }
-
-        val changed = if (locked) {
-            try {
-                refreshDirNow(path)
-            } finally {
-                refreshLock.unlock()
-            }
-        } else {
-            refreshDirNow(path)
-        }
-
-        if (changed) {
-            syncWatchers()
-        }
-        return changed
+        return changed.isNotEmpty()
     }
 
-    private fun refreshDirNow(path: String): Boolean {
-        val old = index.dirs[path]
-        val dir = File(path)
-        if (!dir.isDirectory) {
-            if (old != null) {
-                removeSubtree(path)
+    /**
+     * Looks at the folders that matter most only: the ones holding media and the top levels of every storage.
+     * That is a few hundred timestamps, so it takes milliseconds even on a huge storage, and it catches new
+     * downloads, deleted photos and removed albums. New folders buried deeper are found by [refresh].
+     * Returns true when something changed.
+     */
+    fun quickRefresh(context: Context): Boolean = quickRefreshDirs(context).isNotEmpty()
+
+    private fun quickRefreshDirs(context: Context): Set<String> {
+        ensureInit(context)
+        val dirs = index.dirs
+        if (dirs.isEmpty()) {
+            return emptySet()
+        }
+
+        val changed = findChangedDirs(dirs, hotPaths(context, dirs))
+        if (changed.isEmpty()) {
+            return emptySet()
+        }
+
+        val result = applyDirChanges(changed, false)
+        if (result.isNotEmpty()) {
+            scheduleSyncWatchers()
+        }
+        return result
+    }
+
+    private fun hotPaths(context: Context, dirs: Map<String, DirNode>): List<String> {
+        val roots = normalizeRoots(getRoots(context))
+        val hot = ArrayList<String>()
+        for ((path, node) in dirs) {
+            if (node.files.isNotEmpty() || isNearRoot(path, roots)) {
+                hot.add(path)
+            }
+        }
+        return hot
+    }
+
+    private fun isNearRoot(path: String, roots: List<String>): Boolean {
+        for (root in roots) {
+            if (path == root) {
                 return true
             }
-            return false
+
+            if (path.length > root.length && path.startsWith(root) && path[root.length] == '/') {
+                var depth = 0
+                for (i in root.length until path.length) {
+                    if (path[i] == '/') {
+                        depth++
+                    }
+                }
+
+                if (depth <= HOT_DEPTH) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /**
+     * Lists the given folders again and updates the index in one step. Folders that are gone are dropped with
+     * everything below them, new sub folders are walked. [verify] skips folders whose timestamp did not change.
+     * Returns the folders whose content, sub folders or existence changed.
+     */
+    private fun applyDirChanges(paths: Collection<String>, verify: Boolean): Set<String> {
+        if (paths.isEmpty()) {
+            return emptySet()
         }
 
-        if (old != null && !old.isRacy && old.mtime == dir.lastModified()) {
-            return false
-        }
-
-        val node = listDirectory(path, old, false, System.currentTimeMillis()) ?: return false
         val known = index.dirs
-        val newSubs = node.subdirs.map { joinPath(path, it) }.filter { !known.containsKey(it) }
-        val extra = if (newSubs.isEmpty()) emptyMap() else Walker.walkFresh(newSubs)
-        val vanished = old?.subdirs?.filter { !node.subdirs.contains(it) }?.map { joinPath(path, it) } ?: emptyList()
+        val now = System.currentTimeMillis()
+        val updated = HashMap<String, DirNode>()
+        val gone = LinkedHashSet<String>()
+        val newSubs = LinkedHashSet<String>()
+        val changed = HashSet<String>()
 
+        for (path in paths) {
+            val old = known[path]
+            val dir = File(path)
+            if (!dir.isDirectory) {
+                if (old != null) {
+                    gone.add(path)
+                    changed.add(path)
+                }
+                continue
+            }
+
+            if (verify && old != null && !old.isRacy && readDirMtime(path) == old.mtime) {
+                continue
+            }
+
+            val node = listDirectory(path, old, false, now) ?: continue
+            updated[path] = node
+            val nowSubs = node.subdirs.toHashSet()
+            val inAndroid = nameOf(path) == "Android"
+            node.subdirs.forEach { sub ->
+                val full = joinPath(path, sub)
+                // app private storage is never walked, see Walker
+                if (!known.containsKey(full) && !(inAndroid && (sub == "data" || sub == "obb"))) {
+                    newSubs.add(full)
+                }
+            }
+
+            old?.subdirs?.forEach { sub ->
+                if (!nowSubs.contains(sub)) {
+                    gone.add(joinPath(path, sub))
+                }
+            }
+
+            if (old == null || !sameContent(old, node)) {
+                changed.add(path)
+            }
+        }
+
+        if (updated.isEmpty() && gone.isEmpty()) {
+            return emptySet()
+        }
+
+        val extra = if (newSubs.isEmpty()) emptyMap() else Walker.walkFresh(newSubs)
         synchronized(indexLock) {
             val copy = HashMap(index.dirs)
-            copy[path] = node
+            copy.putAll(updated)
             copy.putAll(extra)
-            vanished.forEach { gone -> copy.keys.removeAll { it == gone || it.startsWith("$gone/") } }
+            if (gone.isNotEmpty()) {
+                val prefixes = gone.map { "$it/" }
+                copy.keys.removeAll { key -> gone.contains(key) || prefixes.any { key.startsWith(it) } }
+            }
             index = ScanIndex(copy)
         }
         saveAsync()
-        return old == null || extra.isNotEmpty() || vanished.isNotEmpty() || !sameContent(old, node)
+        return changed
     }
 
     private fun sameContent(a: DirNode, b: DirNode): Boolean {
@@ -277,18 +380,11 @@ object FastScanner {
         return true
     }
 
-    private fun removeSubtree(path: String) {
-        synchronized(indexLock) {
-            val copy = HashMap(index.dirs)
-            copy.keys.removeAll { it == path || it.startsWith("$path/") }
-            index = ScanIndex(copy)
-        }
-        saveAsync()
-    }
-
+    /** Cheap poll: only looks at the folders that matter most, see [quickRefresh]. */
     fun hasChanges(context: Context): Boolean {
         ensureInit(context)
-        return anyDirectoryChanged(index)
+        val dirs = index.dirs
+        return findChangedDirs(dirs, hotPaths(context, dirs)).isNotEmpty()
     }
 
     fun isWarm(context: Context): Boolean {
@@ -612,13 +708,21 @@ object FastScanner {
         listeners.remove(owner)
     }
 
-    /** Call from onResume of screens showing folders or media. Watching stops when no screen is visible. */
+    /**
+     * Call from onResume of screens showing folders or media. Watching goes on for a while after the last screen
+     * left, so changes made in the meantime are in the index when the app comes back.
+     */
     fun onForeground(context: Context) {
         synchronized(watchLock) {
+            stopTask?.cancel(false)
+            stopTask = null
             foregroundCount++
             if (foregroundCount == 1) {
+                lastAwayMs = if (backgroundSince > 0L) System.currentTimeMillis() - backgroundSince else Long.MAX_VALUE
                 appContext = context.applicationContext
-                startWatching(context.applicationContext)
+                if (!watching) {
+                    startWatching(context.applicationContext)
+                }
             }
         }
     }
@@ -627,7 +731,9 @@ object FastScanner {
         synchronized(watchLock) {
             foregroundCount = maxOf(0, foregroundCount - 1)
             if (foregroundCount == 0) {
-                stopWatching()
+                backgroundSince = System.currentTimeMillis()
+                stopTask?.cancel(false)
+                stopTask = worker.schedule(Runnable { stopWatchingIfIdle() }, BACKGROUND_WATCH_MS, TimeUnit.MILLISECONDS)
             }
         }
     }
@@ -648,25 +754,29 @@ object FastScanner {
             }
         }
 
-        worker.execute {
-            try {
-                syncWatchers()
-            } catch (ignored: Throwable) {
-            }
-        }
+        scheduleSyncWatchers()
     }
 
-    private fun stopWatching() {
-        watching = false
-        contentObserver?.let {
-            try {
-                appContext?.contentResolver?.unregisterContentObserver(it)
-            } catch (ignored: Exception) {
+    /** Stops watching unless a screen came back in the meantime. Never holds the lock while watchers are stopped. */
+    private fun stopWatchingIfIdle() {
+        val toStop = synchronized(watchLock) {
+            if (foregroundCount > 0 || !watching) {
+                return
             }
+
+            watching = false
+            contentObserver?.let {
+                try {
+                    appContext?.contentResolver?.unregisterContentObserver(it)
+                } catch (ignored: Exception) {
+                }
+            }
+            contentObserver = null
+            val list = ArrayList(watchers.values)
+            watchers.clear()
+            list
         }
-        contentObserver = null
-        watchers.values.forEach { it.stopWatching() }
-        watchers.clear()
+        toStop.forEach { it.stopWatching() }
     }
 
     private fun onMediaStoreChanged() {
@@ -706,19 +816,18 @@ object FastScanner {
 
         val changed = HashSet<String>()
         val fast = isEnabled(context)
-        if (fast) {
-            dirs.forEach { dir ->
-                if (refreshDir(context, dir, true)) {
-                    changed.add(dir)
-                }
+        if (fast && dirs.isNotEmpty()) {
+            changed.addAll(applyDirChanges(dirs, true))
+            if (changed.isNotEmpty()) {
+                scheduleSyncWatchers()
             }
         }
 
         val unknown = mediaStoreDirty
         if (unknown) {
             mediaStoreDirty = false
-            if (fast && anyDirectoryChanged(index)) {
-                refresh(context, false)
+            if (fast) {
+                changed.addAll(quickRefreshDirs(context))
             }
         }
 
@@ -726,12 +835,31 @@ object FastScanner {
             val result: Set<String> = if (unknown) emptySet() else changed
             mainHandler.post { listeners.values.forEach { it.onChanged(result) } }
         }
+
+        // something changed that no watcher reported: look at the rest of the storage once in a while
+        if (unknown && fast && System.currentTimeMillis() - lastRefreshAt > MEDIASTORE_REFRESH_GAP) {
+            if (refresh(context, false) > 0) {
+                mainHandler.post { listeners.values.forEach { it.onChanged(emptySet()) } }
+            }
+        }
+    }
+
+    private fun scheduleSyncWatchers() {
+        if (syncScheduled.compareAndSet(false, true)) {
+            watchWorker.execute {
+                syncScheduled.set(false)
+                try {
+                    syncWatchers()
+                } catch (ignored: Throwable) {
+                }
+            }
+        }
     }
 
     /** Watch folders holding media, their parents up to the roots and the top levels of the storage. */
     private fun syncWatchers() {
         val context = appContext ?: return
-        synchronized(watchLock) {
+        synchronized(syncLock) {
             if (!watching || !isEnabled(context)) {
                 return
             }
@@ -767,20 +895,46 @@ object FastScanner {
                 wanted
             }
 
-            val iterator = watchers.entries.iterator()
-            while (iterator.hasNext()) {
-                val entry = iterator.next()
-                if (!limited.contains(entry.key)) {
-                    entry.value.stopWatching()
-                    iterator.remove()
+            // only short looks at the shared map, the slow part (adding and removing watches) runs without the lock
+            val toStop = ArrayList<FileObserver>()
+            val toStart = ArrayList<String>()
+            synchronized(watchLock) {
+                val iterator = watchers.entries.iterator()
+                while (iterator.hasNext()) {
+                    val entry = iterator.next()
+                    if (!limited.contains(entry.key)) {
+                        toStop.add(entry.value)
+                        iterator.remove()
+                    }
+                }
+
+                limited.forEach { path ->
+                    if (!watchers.containsKey(path)) {
+                        toStart.add(path)
+                    }
                 }
             }
 
-            limited.forEach { path ->
-                if (!watchers.containsKey(path)) {
-                    val observer = createObserver(path)
-                    observer.startWatching()
-                    watchers[path] = observer
+            toStop.forEach { it.stopWatching() }
+            for (path in toStart) {
+                if (!watching) {
+                    break
+                }
+
+                val observer = createObserver(path)
+                observer.startWatching()
+                val kept = synchronized(watchLock) {
+                    if (watching) {
+                        watchers[path] = observer
+                        true
+                    } else {
+                        false
+                    }
+                }
+
+                if (!kept) {
+                    observer.stopWatching()
+                    break
                 }
             }
         }
@@ -819,7 +973,7 @@ object FastScanner {
                     saveSnapshot(file, index)
                 } catch (ignored: Throwable) {
                 }
-            }, 500, TimeUnit.MILLISECONDS)
+            }, SNAPSHOT_SAVE_DELAY, TimeUnit.MILLISECONDS)
         }
     }
 

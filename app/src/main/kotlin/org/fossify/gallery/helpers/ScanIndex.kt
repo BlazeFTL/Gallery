@@ -89,6 +89,22 @@ fun classifyMedia(name: String): Int {
     }
 }
 
+private val COMMON_FILE_EXTENSIONS = hashSetOf(
+    "pdf", "zip", "rar", "7z", "apk", "apks", "xapk", "txt", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv",
+    "json", "xml", "html", "htm", "mp3", "m4a", "aac", "wav", "ogg", "flac", "opus", "epub", "torrent", "exe",
+    "iso", "db", "log", "tmp", "part", "crdownload", "download", "pending", "bak", "gz", "tar", "bin", "dat",
+    "js", "css", "md", "ini", "cfg", "vcf", "ics", "pak", "obb", "ttf", "otf"
+)
+
+/** True for names that end like a document, archive or temporary file, so they can not be folders in practice. */
+internal fun isCommonFileName(name: String): Boolean {
+    val dot = name.lastIndexOf('.')
+    if (dot <= 0 || name.length - dot > 11) {
+        return false
+    }
+    return COMMON_FILE_EXTENSIONS.contains(name.substring(dot + 1).lowercase(Locale.ROOT))
+}
+
 internal fun parentOf(path: String): String? {
     val i = path.lastIndexOf('/')
     return if (i <= 0) null else path.substring(0, i)
@@ -159,6 +175,8 @@ internal fun listDirectory(path: String, old: DirNode?, forceFull: Boolean, now:
             // disappeared or turned into a file is dropped when it is visited.
             if (knownDirs != null && knownDirs.contains(name)) {
                 subdirs.add(name)
+            } else if (isCommonFileName(name)) {
+                // a Download folder holds thousands of documents and archives, they are never stat'ed
             } else if (readAttrs(joinPath(path, name), false)?.isDirectory == true) {
                 subdirs.add(name)
             }
@@ -291,6 +309,38 @@ internal fun anyDirectoryChanged(index: ScanIndex): Boolean {
         pool.shutdown()
     }
     return changed.get()
+}
+
+/** Modification time of a directory in the same unit the index stores, -2 when it can not be read. */
+internal fun readDirMtime(path: String): Long {
+    val attrs = readAttrs(path, true) ?: return -2L
+    return if (attrs.isDirectory) attrs.lastModifiedTime().toMillis() else -2L
+}
+
+/** Subset of [paths] whose directory differs from the index. Parallel stat of directories only. */
+internal fun findChangedDirs(dirs: Map<String, DirNode>, paths: List<String>): List<String> {
+    if (paths.isEmpty()) {
+        return emptyList()
+    }
+
+    val changed = java.util.concurrent.ConcurrentLinkedQueue<String>()
+    val pool = ForkJoinPool(4)
+    try {
+        pool.submit {
+            paths.parallelStream().forEach { path ->
+                val node = dirs[path]
+                val attrs = readAttrs(path, true)
+                val different = node == null || attrs == null || !attrs.isDirectory || node.isRacy ||
+                    attrs.lastModifiedTime().toMillis() != node.mtime
+                if (different) {
+                    changed.add(path)
+                }
+            }
+        }.get()
+    } finally {
+        pool.shutdown()
+    }
+    return changed.toList()
 }
 
 // ---- queries ---------------------------------------------------------------------------

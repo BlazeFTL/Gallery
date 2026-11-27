@@ -217,7 +217,7 @@ private fun ViewGroup.findActionMenuView(): ActionMenuView? {
     return null
 }
 
-/** Rounded tonal selection bar with a close cross, a clear count and round icon buttons. */
+/** Flat tonal selection bar with a close cross, a clear count and round icon buttons. */
 @SuppressLint("RestrictedApi")
 private fun ViewGroup.styleExpressiveActionBar() {
     val ctx = context
@@ -226,19 +226,10 @@ private fun ViewGroup.styleExpressiveActionBar() {
     val textColor = ctx.getProperTextColor()
     val container = ColorUtils.blendARGB(ctx.getProperBackgroundColor(), ctx.getProperPrimaryColor(), 0.22f)
 
-    // AppCompat owns the top margin of this bar (it keeps the bar below the status bar), so the rounded pill is
-    // drawn inside the bar instead of moving the bar. The solid layer hides the search bar underneath.
-    val pill = GradientDrawable().apply {
-        cornerRadius = dp(28f).toFloat()
-        setColor(container)
-    }
-    background = LayerDrawable(
-        arrayOf(
-            ColorDrawable(ctx.getProperBackgroundColor()),
-            InsetDrawable(pill, dp(12f), dp(8f), dp(12f), dp(8f))
-        )
-    )
-    setPadding(dp(16f), dp(8f), dp(16f), dp(8f))
+    // flat full width bar: no rounded pill. AppCompat owns the top margin of this bar (it keeps the bar below the
+    // status bar), the solid background also hides the search bar underneath.
+    background = ColorDrawable(container)
+    setPadding(dp(12f), dp(4f), dp(12f), dp(4f))
 
     (findViewById<View>(androidx.appcompat.R.id.action_mode_close_button) as? ImageView)?.apply {
         setImageResource(R.drawable.ic_cross_vector)
