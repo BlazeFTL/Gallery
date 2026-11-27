@@ -1,39 +1,106 @@
-# Fossify Gallery
-
-<img alt="Logo" src="graphics/icon.webp" width="120" />
-
-<a href='https://play.google.com/store/apps/details?id=org.fossify.gallery'><img alt='Get it on Google Play' src='https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png' height=80/></a> <a href="https://f-droid.org/en/packages/org.fossify.gallery/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on-en.svg" alt="Get it on F-Droid" height=80/></a> <a href="https://apt.izzysoft.de/fdroid/index/apk/org.fossify.gallery"><img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png" alt="Get it on IzzyOnDroid" height=80/></a>
-
-Unleash memories, not personal data. Fossify Gallery is the ultimate photo and video app that's as powerful as it is private. No ads, no unnecessary permissions – just a seamless experience tailored for you.
-
-**🖼️ PHOTO EDITING AT YOUR FINGERTIPS:**  
-Enhance your photos with our basic yet powerful photo editor. Crop, resize, rotate, flip, draw, and apply stunning filters, all without compromising your privacy. Take control of your memories like never before.
-
-**🌐 PRIVACY FIRST, ALWAYS:**  
-Your privacy matters. Ditch the data-hungry giants. Fossify Gallery puts you in control. Strip away EXIF metadata like GPS coordinates and camera details, keeping your memories yours, and yours alone.
-
-**🔒 SUPERIOR SECURITY:**  
-Lock down your memories with pin, pattern, or fingerprint protection. Secure specific photos, videos, or the entire app – you decide who gets access. Peace of mind, guaranteed.
-
-**🔄 RECOVER WITH EASE:**  
-Breathe easy, accidents happen! Fossify Gallery's built-in recycle bin lets you recover deleted photos and videos in seconds. No more lost treasures, just pure relief.
-
-**🎨 YOUR GALLERY, YOUR STYLE:**  
-Customize the look, feel, and functionality to match your style. From UI themes to function buttons, Fossify Gallery gives you the creative freedom you crave.
-
-**📷 UNIVERSAL FORMAT FREEDOM:**  
-JPEG, JPEG XL, PNG, MP4, MKV, RAW, SVG, GIF, AVIF, videos, and more – we've got your memories covered, in any format you choose. No restrictions, just limitless possibilities.
-
-**✨ MATERIAL DESIGN WITH DYNAMIC THEMES:**  
-Experience the beauty of intuitive material design with dynamic themes. Want more? Dive into custom themes and make your gallery truly unique.
-
-➡️ Explore more Fossify apps: https://www.fossify.org<br>
-➡️ Open-Source Code: https://www.github.com/FossifyOrg<br>
-➡️ Join the community on Reddit: https://www.reddit.com/r/Fossify<br>
-➡️ Connect on Telegram: https://t.me/Fossify
-
 <div align="center">
-<img alt="App image" src="fastlane/metadata/android/en-US/images/phoneScreenshots/1_en-US.png" width="30%">
-<img alt="App image" src="fastlane/metadata/android/en-US/images/phoneScreenshots/2_en-US.png" width="30%">
-<img alt="App image" src="fastlane/metadata/android/en-US/images/phoneScreenshots/3_en-US.png" width="30%">
+
+<img alt="Gallery" src="graphics/icon.webp" width="120" />
+
+# Gallery
+
+A fast, private and customizable gallery for Android.<br>
+No ads, no trackers, no network access.
+
+[![Latest build](https://img.shields.io/github/v/release/BlazeFTL/Gallery?include_prereleases&label=latest%20build&style=flat-square)](https://github.com/BlazeFTL/Gallery/releases)
+[![License](https://img.shields.io/github/license/BlazeFTL/Gallery?style=flat-square)](LICENSE)
+[![Min SDK](https://img.shields.io/badge/Android-8.0%2B-3ddc84?style=flat-square)](#download)
+
 </div>
+
+Gallery is a fork of [Fossify Gallery](https://github.com/FossifyOrg/Gallery), which is itself based on [Simple Gallery](https://github.com/SimpleMobileTools/Simple-Gallery). The upstream project rarely receives updates, so this fork carries its own design, fixes and features.
+
+## What is different in this fork
+
+- Design updates across the app
+- Updated icons
+- Improved media scanning
+- Album title shown under the album cover
+- 5 new app icons
+- Custom themes
+- Fixed a delete bug
+- Improved deleting of multiple photos at once
+- Redesigned About page
+- Build workflow that outputs direct APKs, split by architecture
+
+## Features
+
+- Photo editor: crop, resize, rotate, flip, draw and apply filters
+- Privacy tools: strip EXIF metadata such as GPS coordinates and camera details
+- Security: lock the whole app, hidden items, excluded folders or file deletion with a PIN, pattern or fingerprint
+- Recycle bin to recover deleted photos and videos
+- Wide format support: JPEG, JPEG XL, PNG, GIF, WebP, AVIF, APNG, SVG, RAW, MP4, MKV and more
+- Hide, exclude and include folders, pin albums, group and sort media
+- Material design with dynamic and custom themes, configurable buttons and thumbnails
+
+## Download
+
+Get the latest APK from the [Releases](https://github.com/BlazeFTL/Gallery/releases) page. Every release asset is a direct APK, there is nothing to unzip.
+
+| File ends with | Use it on |
+| --- | --- |
+| `arm64-v8a` | Almost all phones made in the last years |
+| `armeabi-v7a` | Older 32-bit ARM phones |
+| `x86_64`, `x86` | Emulators and some tablets or Chromebooks |
+| `universal` | Any device, larger file |
+
+Not sure which one to pick? Use `universal`, or `arm64-v8a` on a modern phone.
+
+## Building
+
+### GitHub Actions
+
+Run the **Build APK** workflow from the Actions tab and pick your options.
+
+| Option | Description |
+| --- | --- |
+| Flavor | `foss` or `gplay` |
+| Build type | `release` is signed with a stable CI key, `debug` installs as a separate `.debug` app |
+| Architecture | `all` builds one APK per architecture plus a universal APK. Pick a single architecture or `universal` to build just that |
+| R8 | Code shrinking, optimization and obfuscation (release only) |
+| Shrink resources | Removes unused resources, needs R8 (release only) |
+| Image optimization | PNG crunching (release only) |
+| Upload artifacts | Attaches each APK to the run as an unzipped download |
+| Publish release | Publishes the APKs as a pre-release |
+
+### Locally
+
+```
+./gradlew assembleFossRelease
+```
+
+The same options are available as Gradle properties:
+
+```
+./gradlew assembleFossRelease \
+    -PABI_SPLITS=true \
+    -PABI_LIST=arm64-v8a,armeabi-v7a \
+    -PUNIVERSAL_APK=false \
+    -PENABLE_R8=true \
+    -PSHRINK_RESOURCES=true \
+    -PCRUNCH_PNGS=true
+```
+
+| Property | Default | Description |
+| --- | --- | --- |
+| `ABI_SPLITS` | `false` | Build one APK per architecture |
+| `ABI_LIST` | all four | Comma separated list of architectures to build |
+| `UNIVERSAL_APK` | `true` | Also build a universal APK when splitting |
+| `ENABLE_R8` | `true` | R8 for release builds |
+| `SHRINK_RESOURCES` | `true` | Resource shrinking, ignored when R8 is off |
+| `CRUNCH_PNGS` | `true` | PNG crunching for release builds |
+
+Signing uses `keystore.properties` (see `keystore.properties_sample`) or the `SIGNING_*` environment variables.
+
+## Credits
+
+Gallery builds on the work of the [Simple Gallery](https://github.com/SimpleMobileTools/Simple-Gallery) and [Fossify Gallery](https://github.com/FossifyOrg/Gallery) authors. The full list of libraries is in the app, under About, Open-source libraries.
+
+## License
+
+Gallery is licensed under the [GNU General Public License v3.0](LICENSE).

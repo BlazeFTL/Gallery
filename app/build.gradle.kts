@@ -26,6 +26,14 @@ fun hasSigningVars(): Boolean {
 val baseVersionCode = project.property("VERSION_CODE").toString().toInt()
 val abiCodes = mapOf("armeabi-v7a" to 1, "arm64-v8a" to 2, "x86" to 3, "x86_64" to 4)
 val abiSplits = providers.gradleProperty("ABI_SPLITS").map(String::toBoolean).getOrElse(false)
+val universalApk = providers.gradleProperty("UNIVERSAL_APK").map(String::toBoolean).getOrElse(true)
+val selectedAbis = providers.gradleProperty("ABI_LIST")
+    .map { list -> list.split(",").map(String::trim).filter { it in abiCodes } }
+    .getOrElse(emptyList())
+    .ifEmpty { abiCodes.keys.toList() }
+val enableR8 = providers.gradleProperty("ENABLE_R8").map(String::toBoolean).getOrElse(true)
+val shrinkResources = enableR8 && providers.gradleProperty("SHRINK_RESOURCES").map(String::toBoolean).getOrElse(true)
+val crunchPngs = providers.gradleProperty("CRUNCH_PNGS").map(String::toBoolean).getOrElse(true)
 
 base {
     archivesName = "gallery-$baseVersionCode"
@@ -72,8 +80,9 @@ android {
             applicationIdSuffix = ".debug"
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = enableR8
+            isShrinkResources = shrinkResources
+            isCrunchPngs = crunchPngs
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -94,8 +103,8 @@ android {
         abi {
             isEnable = abiSplits
             reset()
-            include(*abiCodes.keys.toTypedArray())
-            isUniversalApk = true
+            include(*selectedAbis.toTypedArray())
+            isUniversalApk = universalApk
         }
     }
 

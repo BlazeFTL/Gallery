@@ -1,5 +1,7 @@
 name: Build APK
 
+run-name: Build ${{ inputs.flavor }} ${{ inputs.build_type }} (${{ inputs.abi }})
+
 on:
     workflow_dispatch:
         inputs:
@@ -17,8 +19,35 @@ on:
                 options:
                     - release
                     - debug
+            abi:
+                description: "Architecture (all = one APK per architecture plus a universal APK)"
+                type: choice
+                default: all
+                options:
+                    - all
+                    - arm64-v8a
+                    - armeabi-v7a
+                    - x86_64
+                    - x86
+                    - universal
+            r8:
+                description: "R8: code shrinking, optimization and obfuscation (release only)"
+                type: boolean
+                default: true
+            shrink_resources:
+                description: "Shrink unused resources (needs R8, release only)"
+                type: boolean
+                default: true
+            optimize_images:
+                description: "Image optimization: PNG crunching (release only)"
+                type: boolean
+                default: true
+            upload_artifacts:
+                description: "Attach the APKs to the run as direct, unzipped downloads"
+                type: boolean
+                default: true
             publish_release:
-                description: "Also publish the APK as a pre-release (direct, unzipped download)"
+                description: "Publish the APKs as a pre-release (direct downloads)"
                 type: boolean
                 default: true
 
@@ -63,6 +92,10 @@ jobs:
               env:
                   FLAVOR: ${{ inputs.flavor }}
                   BUILD_TYPE: ${{ inputs.build_type }}
+                  ABI: ${{ inputs.abi }}
+                  R8: ${{ inputs.r8 }}
+                  SHRINK_RESOURCES: ${{ inputs.shrink_resources }}
+                  OPTIMIZE_IMAGES: ${{ inputs.optimize_images }}
               run: |
                   if [ "$BUILD_TYPE" = "release" ]; then
                       export SIGNING_STORE_FILE="$HOME/ci-keystore/ci.keystore"
@@ -70,41 +103,107 @@ jobs:
                       export SIGNING_KEY_ALIAS=ci
                       export SIGNING_KEY_PASSWORD=android-ci
                   fi
+                  args=(--stacktrace "-PENABLE_R8=$R8" "-PSHRINK_RESOURCES=$SHRINK_RESOURCES" "-PCRUNCH_PNGS=$OPTIMIZE_IMAGES")
+                  case "$ABI" in
+                      all) args+=(-PABI_SPLITS=true -PUNIVERSAL_APK=true) ;;
+                      universal) args+=(-PABI_SPLITS=false) ;;
+                      *) args+=(-PABI_SPLITS=true "-PABI_LIST=$ABI" -PUNIVERSAL_APK=false) ;;
+                  esac
                   flavor_cap="$(tr '[:lower:]' '[:upper:]' <<< "${FLAVOR:0:1}")${FLAVOR:1}"
                   type_cap="$(tr '[:lower:]' '[:upper:]' <<< "${BUILD_TYPE:0:1}")${BUILD_TYPE:1}"
                   chmod +x ./gradlew
-                  ./gradlew --stacktrace ":app:assemble${flavor_cap}${type_cap}"
+                  ./gradlew "${args[@]}" ":app:assemble${flavor_cap}${type_cap}"
 
-            - name: Collect APK
-              id: apk
+            - name: Collect APKs
+              env:
+                  FLAVOR: ${{ inputs.flavor }}
+                  BUILD_TYPE: ${{ inputs.build_type }}
               run: |
-                  apk="$(find app/build/outputs/apk -name '*.apk' | head -n 1)"
-                  if [ -z "$apk" ]; then
+                  version="$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)"
+                  mkdir -p dist
+                  while IFS= read -r apk; do
+                      case "$(basename "$apk")" in
+                          *arm64-v8a*) abi=arm64-v8a ;;
+                          *armeabi-v7a*) abi=armeabi-v7a ;;
+                          *x86_64*) abi=x86_64 ;;
+                          *x86*) abi=x86 ;;
+                          *) abi=universal ;;
+                      esac
+                      cp "$apk" "dist/Gallery-${version}-${FLAVOR}-${BUILD_TYPE}-${abi}.apk"
+                  done < <(find app/build/outputs/apk -name '*.apk' | sort)
+                  if ! ls dist/*.apk > /dev/null 2>&1; then
                       echo "No APK produced" >&2
                       exit 1
                   fi
-                  mkdir -p dist
-                  name="Gallery-${{ inputs.flavor }}-${{ inputs.build_type }}-${{ github.run_number }}.apk"
-                  cp "$apk" "dist/$name"
-                  echo "path=dist/$name" >> "$GITHUB_OUTPUT"
-                  echo "name=$name" >> "$GITHUB_OUTPUT"
                   ls -lh dist
+                  {
+                      echo "### APKs"
+                      echo '```'
+                      ls -lh dist | tail -n +2
+                      echo '```'
+                  } >> "$GITHUB_STEP_SUMMARY"
 
-            - name: Upload APK artifact
-              uses: actions/upload-artifact@v4
+            - name: Upload universal APK
+              if: inputs.upload_artifacts
+              uses: actions/upload-artifact@v7
               with:
-                  name: ${{ steps.apk.outputs.name }}
-                  path: ${{ steps.apk.outputs.path }}
-                  compression-level: 0
-                  if-no-files-found: error
+                  path: dist/*-universal.apk
+                  archive: false
+                  if-no-files-found: ignore
+
+            - name: Upload arm64-v8a APK
+              if: inputs.upload_artifacts
+              uses: actions/upload-artifact@v7
+              with:
+                  path: dist/*-arm64-v8a.apk
+                  archive: false
+                  if-no-files-found: ignore
+
+            - name: Upload armeabi-v7a APK
+              if: inputs.upload_artifacts
+              uses: actions/upload-artifact@v7
+              with:
+                  path: dist/*-armeabi-v7a.apk
+                  archive: false
+                  if-no-files-found: ignore
+
+            - name: Upload x86_64 APK
+              if: inputs.upload_artifacts
+              uses: actions/upload-artifact@v7
+              with:
+                  path: dist/*-x86_64.apk
+                  archive: false
+                  if-no-files-found: ignore
+
+            - name: Upload x86 APK
+              if: inputs.upload_artifacts
+              uses: actions/upload-artifact@v7
+              with:
+                  path: dist/*-x86.apk
+                  archive: false
+                  if-no-files-found: ignore
 
             - name: Publish pre-release
               if: inputs.publish_release
               env:
                   GH_TOKEN: ${{ github.token }}
+                  FLAVOR: ${{ inputs.flavor }}
+                  BUILD_TYPE: ${{ inputs.build_type }}
+                  ABI: ${{ inputs.abi }}
+                  R8: ${{ inputs.r8 }}
+                  SHRINK_RESOURCES: ${{ inputs.shrink_resources }}
+                  OPTIMIZE_IMAGES: ${{ inputs.optimize_images }}
               run: |
-                  gh release create "build-${{ github.run_number }}" "${{ steps.apk.outputs.path }}" \
+                  notes="Built from ${GITHUB_SHA::7} on ${GITHUB_REF_NAME}.
+
+                  Flavor: ${FLAVOR}
+                  Build type: ${BUILD_TYPE}
+                  Architecture: ${ABI}
+                  R8: ${R8}
+                  Resource shrinking: ${SHRINK_RESOURCES}
+                  Image optimization: ${OPTIMIZE_IMAGES}"
+                  gh release create "build-${{ github.run_number }}" dist/*.apk \
                       --target "${{ github.sha }}" \
                       --prerelease \
-                      --title "Build ${{ github.run_number }} (${{ inputs.flavor }} ${{ inputs.build_type }})" \
-                      --notes "Built from ${{ github.sha }} on ${{ github.ref_name }}."
+                      --title "Build ${{ github.run_number }} (${FLAVOR} ${BUILD_TYPE}, ${ABI})" \
+                      --notes "$notes"

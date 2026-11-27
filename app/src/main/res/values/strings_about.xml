@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gallery_about_project" translatable="false">Project</string>
+    <string name="gallery_about_support" translatable="false">Support</string>
+    <string name="gallery_about_other" translatable="false">Other</string>
+    <string name="gallery_about_source_code" translatable="false">Source code</string>
+    <string name="gallery_about_source_code_value" translatable="false">github.com/BlazeFTL/Gallery</string>
+    <string name="gallery_about_releases" translatable="false">Releases</string>
+    <string name="gallery_about_releases_value" translatable="false">Download the latest build</string>
+    <string name="gallery_about_share" translatable="false">Share app</string>
+    <string name="gallery_about_faq" translatable="false">Frequently asked questions</string>
+    <string name="gallery_about_issues" translatable="false">Report an issue</string>
+    <string name="gallery_about_issues_value" translatable="false">Bugs and feature requests</string>
+    <string name="gallery_about_libraries" translatable="false">Open-source libraries</string>
+    <string name="gallery_about_libraries_value" translatable="false">Credits and links</string>
+    <string name="gallery_about_libraries_intro" translatable="false">Gallery is free software, based on Simple Gallery and Fossify Gallery. The projects below are used under their own licenses.</string>
+    <string name="gallery_about_license" translatable="false">License</string>
+    <string name="gallery_about_license_value" translatable="false">GNU General Public License v3.0</string>
+    <string name="gallery_about_version" translatable="false">Version</string>
+    <string name="gallery_about_by" translatable="false">by BlazeFTL</string>
+    <string name="gallery_about_copied" translatable="false">Copied</string>
+    <string name="gallery_about_no_app" translatable="false">No app found to open this link</string>
+</resources>

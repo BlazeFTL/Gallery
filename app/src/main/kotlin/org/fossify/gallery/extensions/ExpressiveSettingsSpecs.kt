@@ -70,4 +70,12 @@ internal val SETTINGS_ROW_SPECS = mapOf(
     org.fossify.commons.R.id.customization_app_icon_color_holder to RowSpec(R.drawable.ic_cust_app_icon, false),
     org.fossify.commons.R.id.customization_font_holder to RowSpec(R.drawable.ic_cust_font, false),
     org.fossify.commons.R.id.apply_to_all_holder to RowSpec(R.drawable.ic_cust_apply_all, false),
+    R.id.about_source_holder to RowSpec(R.drawable.ic_about_github, true),
+    R.id.about_releases_holder to RowSpec(R.drawable.ic_about_download, true),
+    R.id.about_share_holder to RowSpec(R.drawable.ic_about_share, false),
+    R.id.about_faq_holder to RowSpec(R.drawable.ic_about_help, true),
+    R.id.about_issues_holder to RowSpec(R.drawable.ic_about_bug, true),
+    R.id.about_libraries_holder to RowSpec(R.drawable.ic_about_code, true),
+    R.id.about_license_holder to RowSpec(R.drawable.ic_about_license, true),
+    R.id.about_version_holder to RowSpec(R.drawable.ic_about_info, false),
 )
