@@ -93,12 +93,6 @@ android {
         }
     }
 
-    flavorDimensions.add("licensing")
-    productFlavors {
-        register("foss")
-        register("gplay")
-    }
-
     splits {
         abi {
             isEnable = abiSplits
@@ -159,7 +153,7 @@ android {
 
 if (abiSplits) {
     androidComponents {
-        onVariants(selector().withBuildType("release").withFlavor("licensing" to "foss")) { variant ->
+        onVariants(selector().withBuildType("release")) { variant ->
             variant.outputs.forEach { output ->
                 val abi = output.filters.find {
                     it.filterType == FilterConfiguration.FilterType.ABI
@@ -169,7 +163,7 @@ if (abiSplits) {
                 val unsignedSuffix =
                     if (output.outputFileName.get().endsWith("-unsigned.apk")) "-unsigned" else ""
                 output.versionCode.set(versionCode)
-                output.outputFileName.set("gallery-$versionCode-foss${abiSuffix}-release${unsignedSuffix}.apk")
+                output.outputFileName.set("gallery-$versionCode${abiSuffix}-release${unsignedSuffix}.apk")
             }
         }
     }

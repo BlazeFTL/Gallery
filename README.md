@@ -72,25 +72,20 @@ Run the **Build APK** workflow from the Actions tab and pick your options.
 
 | Option | Description |
 | --- | --- |
-| Flavor | `foss` or `gplay` |
 | Build type | `release` is signed with a stable CI key, `debug` installs as a separate `.debug` app |
-| Architecture | `all` builds one APK per architecture plus a universal APK. Pick a single architecture or `universal` to build just that |
-| R8 | Code shrinking, optimization and obfuscation (release only) |
-| Shrink resources | Removes unused resources, needs R8 (release only) |
-| Image optimization | PNG crunching (release only) |
-| Upload artifacts | Attaches each APK to the run as an unzipped download |
-| Publish release | Publishes the APKs as a pre-release |
+| Optimize build | R8, resource shrinking and PNG crunching (release only) |
+| Create release | Publishes the APKs as a release |
 
 ### Locally
 
 ```
-./gradlew assembleFossRelease
+./gradlew assembleRelease
 ```
 
 The same options are available as Gradle properties:
 
 ```
-./gradlew assembleFossRelease \
+./gradlew assembleRelease \
     -PABI_SPLITS=true \
     -PABI_LIST=arm64-v8a,armeabi-v7a \
     -PUNIVERSAL_APK=false \
