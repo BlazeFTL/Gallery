@@ -116,8 +116,22 @@ class CustomizationActivity : BaseSimpleActivity() {
 
     private val binding by viewBinding(ActivityCustomizationBinding::inflate)
 
+    private var isInBaseCreate = false
+
+    override fun getPackageName(): String {
+        if (isInBaseCreate && Throwable().stackTrace.getOrNull(1)?.className?.startsWith("org.fossify.commons.") == true) {
+            return "org.fossify.gallery"
+        }
+        return super.getPackageName()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+        isInBaseCreate = true
+        try {
+            super.onCreate(savedInstanceState)
+        } finally {
+            isInBaseCreate = false
+        }
         setContentView(binding.root)
 
         setupOptionsMenu()

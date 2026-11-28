@@ -2,6 +2,7 @@ package org.fossify.gallery.activities
 
 import android.database.ContentObserver
 import android.net.Uri
+import android.os.Bundle
 import android.provider.MediaStore.Images
 import android.provider.MediaStore.Video
 import android.view.WindowManager
@@ -57,6 +58,26 @@ open class SimpleActivity : BaseSimpleActivity() {
         R.mipmap.ic_launcher_blue_grey,
         R.mipmap.ic_launcher_grey_black
     )
+
+    private var isInBaseCreate = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        isInBaseCreate = true
+        try {
+            super.onCreate(savedInstanceState)
+        } finally {
+            isInBaseCreate = false
+        }
+    }
+
+    // commons shows a "fake version" dialog at random when the package is not org.fossify.*; only its own
+    // check inside onCreate sees the original package name here, everything else gets the real one
+    override fun getPackageName(): String {
+        if (isInBaseCreate && Throwable().stackTrace.getOrNull(1)?.className?.startsWith("org.fossify.commons.") == true) {
+            return "org.fossify.gallery"
+        }
+        return super.getPackageName()
+    }
 
     override fun onResume() {
         super.onResume()

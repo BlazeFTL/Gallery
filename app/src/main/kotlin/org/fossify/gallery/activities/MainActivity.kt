@@ -115,6 +115,7 @@ import org.fossify.gallery.extensions.storeDirectoryItems
 import org.fossify.gallery.extensions.tryDeleteFileDirItem
 import org.fossify.gallery.extensions.updateDBDirectory
 import org.fossify.gallery.extensions.updateWidgets
+import org.fossify.gallery.helpers.AlbumItemAnimator
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.DirSummaryData
 import org.fossify.gallery.helpers.DirectoryCache
@@ -1959,6 +1960,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             }.apply {
                 setupZoomListener(mZoomListener)
                 runOnUiThread {
+                    if (binding.directoriesGrid.itemAnimator !is AlbumItemAnimator) {
+                        binding.directoriesGrid.itemAnimator = AlbumItemAnimator(resources.displayMetrics.density)
+                    }
                     binding.directoriesGrid.adapter = this
                     setupScrollDirection()
 
