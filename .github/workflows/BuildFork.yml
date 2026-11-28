@@ -1,17 +1,10 @@
 name: Build APK
 
-run-name: Build ${{ inputs.flavor }} ${{ inputs.build_type }} (${{ inputs.abi }})
+run-name: Build ${{ inputs.build_type }}
 
 on:
     workflow_dispatch:
         inputs:
-            flavor:
-                description: "Flavor"
-                type: choice
-                default: foss
-                options:
-                    - foss
-                    - gplay
             build_type:
                 description: "Build type (release is signed with a stable CI key, debug installs as a separate .debug app)"
                 type: choice
@@ -19,35 +12,12 @@ on:
                 options:
                     - release
                     - debug
-            abi:
-                description: "Architecture (all = one APK per architecture plus a universal APK)"
-                type: choice
-                default: all
-                options:
-                    - all
-                    - arm64-v8a
-                    - armeabi-v7a
-                    - x86_64
-                    - x86
-                    - universal
-            r8:
-                description: "R8: code shrinking, optimization and obfuscation (release only)"
+            optimize:
+                description: "Optimize build: R8, resource shrinking and PNG crunching (release only)"
                 type: boolean
                 default: true
-            shrink_resources:
-                description: "Shrink unused resources (needs R8, release only)"
-                type: boolean
-                default: true
-            optimize_images:
-                description: "Image optimization: PNG crunching (release only)"
-                type: boolean
-                default: true
-            upload_artifacts:
-                description: "Attach the APKs to the run as direct, unzipped downloads"
-                type: boolean
-                default: true
-            publish_release:
-                description: "Publish the APKs as a pre-release (direct downloads)"
+            create_release:
+                description: "Create a release"
                 type: boolean
                 default: true
 
@@ -60,21 +30,21 @@ jobs:
         timeout-minutes: 45
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Set up JDK
-              uses: actions/setup-java@v4
+              uses: actions/setup-java@v5
               with:
                   distribution: temurin
                   java-version: 21
 
             - name: Set up Gradle
-              uses: gradle/actions/setup-gradle@v4
+              uses: gradle/actions/setup-gradle@v6
 
             - name: Restore CI signing key
               if: inputs.build_type == 'release'
               id: key-cache
-              uses: actions/cache@v4
+              uses: actions/cache@v5
               with:
                   path: ~/ci-keystore
                   key: ci-keystore-v1
@@ -90,12 +60,8 @@ jobs:
 
             - name: Build APK
               env:
-                  FLAVOR: ${{ inputs.flavor }}
                   BUILD_TYPE: ${{ inputs.build_type }}
-                  ABI: ${{ inputs.abi }}
-                  R8: ${{ inputs.r8 }}
-                  SHRINK_RESOURCES: ${{ inputs.shrink_resources }}
-                  OPTIMIZE_IMAGES: ${{ inputs.optimize_images }}
+                  OPTIMIZE: ${{ inputs.optimize }}
               run: |
                   if [ "$BUILD_TYPE" = "release" ]; then
                       export SIGNING_STORE_FILE="$HOME/ci-keystore/ci.keystore"
@@ -103,20 +69,18 @@ jobs:
                       export SIGNING_KEY_ALIAS=ci
                       export SIGNING_KEY_PASSWORD=android-ci
                   fi
-                  args=(--stacktrace "-PENABLE_R8=$R8" "-PSHRINK_RESOURCES=$SHRINK_RESOURCES" "-PCRUNCH_PNGS=$OPTIMIZE_IMAGES")
-                  case "$ABI" in
-                      all) args+=(-PABI_SPLITS=true -PUNIVERSAL_APK=true) ;;
-                      universal) args+=(-PABI_SPLITS=false) ;;
-                      *) args+=(-PABI_SPLITS=true "-PABI_LIST=$ABI" -PUNIVERSAL_APK=false) ;;
-                  esac
-                  flavor_cap="$(tr '[:lower:]' '[:upper:]' <<< "${FLAVOR:0:1}")${FLAVOR:1}"
                   type_cap="$(tr '[:lower:]' '[:upper:]' <<< "${BUILD_TYPE:0:1}")${BUILD_TYPE:1}"
                   chmod +x ./gradlew
-                  ./gradlew "${args[@]}" ":app:assemble${flavor_cap}${type_cap}"
+                  ./gradlew --stacktrace \
+                      "-PENABLE_R8=$OPTIMIZE" \
+                      "-PSHRINK_RESOURCES=$OPTIMIZE" \
+                      "-PCRUNCH_PNGS=$OPTIMIZE" \
+                      -PABI_SPLITS=true \
+                      -PUNIVERSAL_APK=true \
+                      ":app:assemble${type_cap}"
 
             - name: Collect APKs
               env:
-                  FLAVOR: ${{ inputs.flavor }}
                   BUILD_TYPE: ${{ inputs.build_type }}
               run: |
                   version="$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)"
@@ -129,7 +93,7 @@ jobs:
                           *x86*) abi=x86 ;;
                           *) abi=universal ;;
                       esac
-                      cp "$apk" "dist/Gallery-${version}-${FLAVOR}-${BUILD_TYPE}-${abi}.apk"
+                      cp "$apk" "dist/Gallery-${version}-${BUILD_TYPE}-${abi}.apk"
                   done < <(find app/build/outputs/apk -name '*.apk' | sort)
                   if ! ls dist/*.apk > /dev/null 2>&1; then
                       echo "No APK produced" >&2
@@ -144,7 +108,6 @@ jobs:
                   } >> "$GITHUB_STEP_SUMMARY"
 
             - name: Upload universal APK
-              if: inputs.upload_artifacts
               uses: actions/upload-artifact@v7
               with:
                   path: dist/*-universal.apk
@@ -152,7 +115,6 @@ jobs:
                   if-no-files-found: ignore
 
             - name: Upload arm64-v8a APK
-              if: inputs.upload_artifacts
               uses: actions/upload-artifact@v7
               with:
                   path: dist/*-arm64-v8a.apk
@@ -160,7 +122,6 @@ jobs:
                   if-no-files-found: ignore
 
             - name: Upload armeabi-v7a APK
-              if: inputs.upload_artifacts
               uses: actions/upload-artifact@v7
               with:
                   path: dist/*-armeabi-v7a.apk
@@ -168,7 +129,6 @@ jobs:
                   if-no-files-found: ignore
 
             - name: Upload x86_64 APK
-              if: inputs.upload_artifacts
               uses: actions/upload-artifact@v7
               with:
                   path: dist/*-x86_64.apk
@@ -176,34 +136,24 @@ jobs:
                   if-no-files-found: ignore
 
             - name: Upload x86 APK
-              if: inputs.upload_artifacts
               uses: actions/upload-artifact@v7
               with:
                   path: dist/*-x86.apk
                   archive: false
                   if-no-files-found: ignore
 
-            - name: Publish pre-release
-              if: inputs.publish_release
+            - name: Create release
+              if: inputs.create_release
               env:
                   GH_TOKEN: ${{ github.token }}
-                  FLAVOR: ${{ inputs.flavor }}
                   BUILD_TYPE: ${{ inputs.build_type }}
-                  ABI: ${{ inputs.abi }}
-                  R8: ${{ inputs.r8 }}
-                  SHRINK_RESOURCES: ${{ inputs.shrink_resources }}
-                  OPTIMIZE_IMAGES: ${{ inputs.optimize_images }}
+                  OPTIMIZE: ${{ inputs.optimize }}
               run: |
                   notes="Built from ${GITHUB_SHA::7} on ${GITHUB_REF_NAME}.
 
-                  Flavor: ${FLAVOR}
                   Build type: ${BUILD_TYPE}
-                  Architecture: ${ABI}
-                  R8: ${R8}
-                  Resource shrinking: ${SHRINK_RESOURCES}
-                  Image optimization: ${OPTIMIZE_IMAGES}"
+                  Optimized: ${OPTIMIZE}"
                   gh release create "build-${{ github.run_number }}" dist/*.apk \
                       --target "${{ github.sha }}" \
-                      --prerelease \
-                      --title "Build ${{ github.run_number }} (${FLAVOR} ${BUILD_TYPE}, ${ABI})" \
+                      --title "Build ${{ github.run_number }} (${BUILD_TYPE})" \
                       --notes "$notes"
