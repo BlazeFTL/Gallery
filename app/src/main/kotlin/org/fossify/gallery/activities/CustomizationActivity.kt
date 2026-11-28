@@ -554,7 +554,7 @@ class CustomizationActivity : BaseSimpleActivity() {
         binding.customizationAccentColor.setFillWithStroke(curAccentColor, backgroundColor)
         binding.customizationBackgroundColor.setFillWithStroke(backgroundColor, backgroundColor)
         // the launcher icon is a design of its own, show the chosen one instead of a color
-        binding.customizationAppIconColorLabel.setText(R.string.app_icon_style_title)
+        binding.customizationAppIconColorLabel.setText(AppR.string.app_icon_style_title)
         binding.customizationAppIconColor.apply {
             background = null
             setImageResource(AppIconStyles.previewOf(AppIconStyles.currentStyle(this@CustomizationActivity)))
