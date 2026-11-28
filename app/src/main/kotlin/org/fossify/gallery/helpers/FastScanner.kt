@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.FileObserver
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.provider.MediaStore.Files
 import android.provider.MediaStore.Images
 import androidx.annotation.RequiresApi
@@ -18,6 +19,8 @@ import org.fossify.commons.extensions.queryCursor
 import org.fossify.commons.extensions.sdCardPath
 import org.fossify.commons.helpers.SORT_BY_SIZE
 import org.fossify.commons.helpers.isRPlus
+import org.fossify.gallery.extensions.deleteDBPath
+import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.models.Medium
 import java.io.BufferedInputStream
@@ -54,6 +57,9 @@ object FastScanner {
     private const val REFRESH_MAX_AGE = 1500L
     private const val DEBOUNCE = 250L
     private const val HOT_DEPTH = 3
+    private const val SCAN_PREFS = "fast_scanner_state"
+    private const val KEY_MS_GENERATION = "ms_generation"
+    private const val KEY_MS_SECONDS = "ms_seconds"
     private const val BACKGROUND_WATCH_MS = 120_000L
     private const val MEDIASTORE_REFRESH_GAP = 3000L
     private const val SNAPSHOT_SAVE_DELAY = 2000L
@@ -141,6 +147,11 @@ object FastScanner {
     fun prewarm(context: Context) {
         val appContext = context.applicationContext
         worker.execute {
+            try {
+                resumePendingDeletes(appContext)
+            } catch (ignored: Throwable) {
+            }
+
             try {
                 if (isEnabled(appContext)) {
                     refresh(appContext, false)
@@ -233,7 +244,95 @@ object FastScanner {
      * downloads, deleted photos and removed albums. New folders buried deeper are found by [refresh].
      * Returns true when something changed.
      */
-    fun quickRefresh(context: Context): Boolean = quickRefreshDirs(context).isNotEmpty()
+    fun quickRefresh(context: Context): Boolean {
+        val quick = quickRefreshDirs(context)
+        val synced = syncWithMediaStore(context)
+        return quick.isNotEmpty() || synced.isNotEmpty()
+    }
+
+    /**
+     * MediaStore hears about new and moved media at once, wherever it lands. Every folder it names that the index
+     * does not know the file of is listed again, so a download into a folder buried deeper than the quick refresh
+     * looks is found within milliseconds too. Only what changed since the last check is asked for.
+     */
+    private fun syncWithMediaStore(context: Context): Set<String> {
+        val dirs = index.dirs
+        if (dirs.isEmpty()) {
+            return emptySet()
+        }
+
+        val appContext = context.applicationContext
+        val prefs = appContext.getSharedPreferences(SCAN_PREFS, Context.MODE_PRIVATE)
+        val nowSeconds = System.currentTimeMillis() / 1000L
+        val stale = HashSet<String>()
+        var generation = -1L
+        try {
+            val mediaOnly = "${Files.FileColumns.MEDIA_TYPE} IN (${Files.FileColumns.MEDIA_TYPE_IMAGE}, ${Files.FileColumns.MEDIA_TYPE_VIDEO})"
+            val selection: String
+            val args: Array<String>
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                generation = MediaStore.getGeneration(appContext, MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                val last = prefs.getLong(KEY_MS_GENERATION, -1L)
+                if (last < 0L) {
+                    prefs.edit().putLong(KEY_MS_GENERATION, generation).putLong(KEY_MS_SECONDS, nowSeconds).apply()
+                    return emptySet()
+                }
+
+                selection = "$mediaOnly AND ${MediaStore.MediaColumns.GENERATION_MODIFIED} > ?"
+                args = arrayOf(last.toString())
+            } else {
+                val last = prefs.getLong(KEY_MS_SECONDS, -1L)
+                if (last < 0L) {
+                    prefs.edit().putLong(KEY_MS_SECONDS, nowSeconds).apply()
+                    return emptySet()
+                }
+
+                selection = "$mediaOnly AND ${Images.Media.DATE_ADDED} >= ?"
+                args = arrayOf((last - 5L).toString())
+            }
+
+            appContext.contentResolver.query(Files.getContentUri("external"), arrayOf(Images.Media.DATA), selection, args, null)?.use { cursor ->
+                val dataIndex = cursor.getColumnIndexOrThrow(Images.Media.DATA)
+                while (cursor.moveToNext()) {
+                    val path = cursor.getString(dataIndex) ?: continue
+                    val slash = path.lastIndexOf('/')
+                    if (slash <= 0) {
+                        continue
+                    }
+
+                    val dir = path.substring(0, slash)
+                    val name = path.substring(slash + 1)
+                    if (classifyMedia(name) == 0) {
+                        continue
+                    }
+
+                    val node = dirs[dir]
+                    if ((node == null || node.find(name) == null) && File(path).exists()) {
+                        stale.add(dir)
+                    }
+                }
+            }
+
+            // only remembered once the query worked, so a failed one is simply asked again next time
+            val editor = prefs.edit().putLong(KEY_MS_SECONDS, nowSeconds)
+            if (generation >= 0L) {
+                editor.putLong(KEY_MS_GENERATION, generation)
+            }
+            editor.apply()
+        } catch (ignored: Exception) {
+            return emptySet()
+        }
+
+        if (stale.isEmpty()) {
+            return emptySet()
+        }
+
+        val result = applyDirChanges(stale, false)
+        if (result.isNotEmpty()) {
+            scheduleSyncWatchers()
+        }
+        return result
+    }
 
     private fun quickRefreshDirs(context: Context): Set<String> {
         ensureInit(context)
@@ -392,6 +491,71 @@ object FastScanner {
         return index.dirs.isNotEmpty()
     }
 
+    /** True once the index is in memory. Never waits for the snapshot to load. */
+    fun isLoaded() = index.dirs.isNotEmpty()
+
+    /**
+     * Folder summaries straight from MediaStore: one query, no walk of the storage. Used while the folder index is
+     * still empty (first start), so the album grid does not wait for the walk. Hidden / .nomedia trees MediaStore
+     * never indexes are added when the walk is done.
+     */
+    fun getBootstrapSummaries(
+        context: Context,
+        pickImage: Boolean,
+        pickVideo: Boolean,
+        noMediaFolders: Collection<String>
+    ): ArrayList<DirSummaryData> {
+        val byDir = HashMap<String, ArrayList<FileEntry>>()
+        try {
+            val projection = arrayOf(Images.Media.DATA, Images.Media.SIZE, Images.Media.DATE_MODIFIED, Images.Media.DATE_TAKEN)
+            val selection = "${Files.FileColumns.MEDIA_TYPE} IN (${Files.FileColumns.MEDIA_TYPE_IMAGE}, ${Files.FileColumns.MEDIA_TYPE_VIDEO})"
+            context.contentResolver.query(Files.getContentUri("external"), projection, selection, null, null)?.use { cursor ->
+                val dataIndex = cursor.getColumnIndexOrThrow(Images.Media.DATA)
+                val sizeIndex = cursor.getColumnIndexOrThrow(Images.Media.SIZE)
+                val modifiedIndex = cursor.getColumnIndexOrThrow(Images.Media.DATE_MODIFIED)
+                val takenIndex = cursor.getColumnIndexOrThrow(Images.Media.DATE_TAKEN)
+                while (cursor.moveToNext()) {
+                    val path = cursor.getString(dataIndex) ?: continue
+                    val slash = path.lastIndexOf('/')
+                    if (slash <= 0) {
+                        continue
+                    }
+
+                    val name = path.substring(slash + 1)
+                    val kind = classifyMedia(name)
+                    if (kind == 0) {
+                        continue
+                    }
+
+                    val taken = cursor.getLong(takenIndex)
+                    val entry = FileEntry(name, cursor.getLong(sizeIndex), cursor.getLong(modifiedIndex) * 1000L, if (taken > 0) taken else 0L, kind)
+                    byDir.getOrPut(path.substring(0, slash)) { ArrayList() }.add(entry)
+                }
+            }
+        } catch (ignored: Exception) {
+        }
+
+        val now = System.currentTimeMillis()
+        val noMedia = noMediaFolders.toHashSet()
+        val dirs = HashMap<String, DirNode>(byDir.size * 2 + noMedia.size)
+        byDir.forEach { (dir, files) ->
+            files.sortBy { it.name }
+            dirs[dir] = DirNode(-1L, now, noMedia.contains(dir), false, emptyArray(), files.toTypedArray())
+        }
+
+        // a .nomedia file in a folder without media of its own still hides the folders below it
+        noMedia.forEach { dir ->
+            if (!dirs.containsKey(dir)) {
+                dirs[dir] = DirNode(-1L, now, true, false, emptyArray(), emptyArray())
+            }
+        }
+
+        val config = context.config
+        val wantSize = config.directorySorting and SORT_BY_SIZE != 0
+        val query = buildQuery(context, pickImage, pickVideo, wantSize || config.fileLoadingPriority != PRIORITY_SPEED, wantSize)
+        return buildSummaries(ScanIndex(dirs), query, getTombstones())
+    }
+
     // ---- queries -----------------------------------------------------------------------
 
     private fun buildQuery(
@@ -502,23 +666,32 @@ object FastScanner {
         return paths.isNotEmpty() && paths.all { it.startsWith("$internal/") }
     }
 
-    /** Hides the files from every query and the index at once, before any file is touched. */
+    /**
+     * Hides the files from every query at once, before any file is touched. This is lock free, so it is safe to call
+     * from the main thread; the index itself catches up in the background.
+     */
     fun beginDelete(context: Context, paths: List<String>) {
-        ensureInit(context)
         val byDir = paths.groupBy({ parentOf(it) ?: "" }, { nameOf(it) })
         byDir.forEach { (dir, names) ->
             val map = tombstones.getOrPut(dir) { ConcurrentHashMap() }
             names.forEach { map[it] = 0L }
         }
 
-        synchronized(indexLock) {
-            val copy = HashMap(index.dirs)
-            byDir.forEach { (dir, names) ->
-                val node = copy[dir] ?: return@forEach
-                val gone = names.toHashSet()
-                copy[dir] = node.withFiles(node.files.filter { !gone.contains(it.name) }.toTypedArray())
+        val appContext = context.applicationContext
+        worker.execute {
+            try {
+                ensureInit(appContext)
+                synchronized(indexLock) {
+                    val copy = HashMap(index.dirs)
+                    byDir.forEach { (dir, names) ->
+                        val node = copy[dir] ?: return@forEach
+                        val gone = names.toHashSet()
+                        copy[dir] = node.withFiles(node.files.filter { !gone.contains(it.name) }.toTypedArray())
+                    }
+                    index = ScanIndex(copy)
+                }
+            } catch (ignored: Throwable) {
             }
-            index = ScanIndex(copy)
         }
     }
 
@@ -606,6 +779,80 @@ object FastScanner {
             }
         }
         saveAsync()
+    }
+
+    // ---- delete journal ----------------------------------------------------------------
+
+    private fun journalDir(context: Context) = File(context.applicationContext.filesDir, "pending_deletes")
+
+    /**
+     * Writes down what is about to be deleted. When the app is killed halfway, the rest is finished on the next
+     * start by [resumePendingDeletes]. Returns the journal to hand to [journalDone].
+     */
+    fun journalStart(context: Context, paths: List<String>, binRoot: String?): File? {
+        return try {
+            val dir = journalDir(context)
+            dir.mkdirs()
+            val file = File(dir, "${System.nanoTime()}.del")
+            DataOutputStream(BufferedOutputStream(FileOutputStream(file))).use { out ->
+                out.writeUTF(binRoot ?: "")
+                out.writeInt(paths.size)
+                paths.forEach { out.writeUTF(it) }
+            }
+            file
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun journalDone(file: File?) {
+        try {
+            file?.delete()
+        } catch (ignored: Exception) {
+        }
+    }
+
+    /** Finishes deletes that were cut short, call from a background thread. */
+    fun resumePendingDeletes(context: Context) {
+        val appContext = context.applicationContext
+        val journals = journalDir(appContext).listFiles() ?: return
+        for (journal in journals) {
+            try {
+                var binRoot = ""
+                var paths: List<String> = emptyList()
+                DataInputStream(BufferedInputStream(FileInputStream(journal))).use { input ->
+                    binRoot = input.readUTF()
+                    paths = List(input.readInt()) { input.readUTF() }
+                }
+
+                val toBin = binRoot.isNotEmpty()
+                val remaining = paths.filter { File(it).exists() }
+                if (remaining.isNotEmpty()) {
+                    beginDelete(appContext, remaining)
+                    val codes = delete(remaining, if (toBin) binRoot else null)
+                    finishDelete(remaining, codes)
+                }
+
+                try {
+                    val now = System.currentTimeMillis()
+                    paths.forEach { path ->
+                        if (toBin) {
+                            // moved into the bin: the database row follows the file
+                            if (File(binRoot.trimEnd('/') + if (path.startsWith("/")) path else "/$path").exists()) {
+                                appContext.mediaDB.updateDeleted("$RECYCLE_BIN$path", now, path)
+                            }
+                        } else if (!File(path).exists()) {
+                            appContext.deleteDBPath(path)
+                        }
+                    }
+                } catch (ignored: Exception) {
+                }
+
+                removeFromMediaStore(appContext, paths)
+            } catch (ignored: Exception) {
+            }
+            journal.delete()
+        }
     }
 
     fun removeDirIfEmpty(path: String) = File(path).delete()
@@ -828,6 +1075,7 @@ object FastScanner {
             mediaStoreDirty = false
             if (fast) {
                 changed.addAll(quickRefreshDirs(context))
+                changed.addAll(syncWithMediaStore(context))
             }
         }
 

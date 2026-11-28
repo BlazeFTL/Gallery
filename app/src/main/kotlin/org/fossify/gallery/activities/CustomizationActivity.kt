@@ -23,7 +23,6 @@ import org.fossify.commons.extensions.applyFontToViewRecursively
 import org.fossify.commons.extensions.baseConfig
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.canAccessGlobalConfig
-import org.fossify.commons.extensions.checkAppIconColor
 import org.fossify.gallery.dialogs.AppIconStyleDialog
 import org.fossify.gallery.helpers.AppIconStyles
 import org.fossify.commons.extensions.getColoredMaterialStatusBarColor
@@ -474,8 +473,9 @@ class CustomizationActivity : BaseSimpleActivity() {
             fontName = curFontFileName
         }
 
+        // the launcher icon is picked on its own and never follows the theme colors
+        baseConfig.lastIconColor = baseConfig.appIconColor
         if (didAppIconColorChange) {
-            checkAppIconColor()
             AppIconStyles.ensureApplied(this)
         }
 
@@ -553,7 +553,12 @@ class CustomizationActivity : BaseSimpleActivity() {
         binding.customizationPrimaryColor.setFillWithStroke(primaryColor, backgroundColor)
         binding.customizationAccentColor.setFillWithStroke(curAccentColor, backgroundColor)
         binding.customizationBackgroundColor.setFillWithStroke(backgroundColor, backgroundColor)
-        binding.customizationAppIconColor.setFillWithStroke(curAppIconColor, backgroundColor)
+        // the launcher icon is a design of its own, show the chosen one instead of a color
+        binding.customizationAppIconColorLabel.setText(R.string.app_icon_style_title)
+        binding.customizationAppIconColor.apply {
+            background = null
+            setImageResource(AppIconStyles.previewOf(AppIconStyles.currentStyle(this@CustomizationActivity)))
+        }
         binding.applyToAllSwitch.setTextColor(primaryColor.getContrastColor())
 
         binding.customizationTextColorHolder.setOnClickListener { pickTextColor() }
@@ -817,12 +822,9 @@ class CustomizationActivity : BaseSimpleActivity() {
         AppIconStyleDialog(
             activity = this,
             selectedStyle = AppIconStyles.currentStyle(this),
-            onClassic = {
-                AppIconStyles.apply(this, AppIconStyles.CLASSIC)
-                pickAppIconColor()
-            },
             onStyle = { style ->
                 AppIconStyles.apply(this, style)
+                setupColorsPickers()
             }
         )
     }

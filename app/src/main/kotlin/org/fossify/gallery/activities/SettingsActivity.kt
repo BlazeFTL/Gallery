@@ -855,7 +855,7 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private fun getExportFavoritesFilename(): String {
-        val appName = baseConfig.appId.removeSuffix(".debug").removePrefix("org.fossify.")
+        val appName = baseConfig.appId.removeSuffix(".debug").removePrefix("com.blazeftl.")
         return "$appName-favorites_${getCurrentFormattedDateTime()}"
     }
 

@@ -621,7 +621,8 @@ class MediaAdapter(
                     removeMedia.add(medium)
                 }
 
-                media.removeAll(removeMedia)
+                val removePaths = removeMedia.mapTo(HashSet()) { it.path }
+                media.removeAll { it is Medium && removePaths.contains(it.path) }
                 listener?.tryDeleteFiles(fileDirItems, skipRecycleBin)
                 listener?.updateMediaGridDecoration(media)
                 removeSelectedItems(positions)
@@ -630,7 +631,21 @@ class MediaAdapter(
         }
     }
 
-    private fun getSelectedItems() = selectedKeys.mapNotNull { getItemWithKey(it) } as ArrayList<Medium>
+    // one pass over the grid instead of one search per selected item: instant even with hundreds selected
+    private fun getSelectedItems(): ArrayList<Medium> {
+        val keys = selectedKeys.toHashSet()
+        val found = HashSet<Int>(keys.size * 2)
+        val result = ArrayList<Medium>(keys.size)
+        media.forEach { item ->
+            if (item is Medium) {
+                val key = item.path.hashCode()
+                if (keys.contains(key) && found.add(key)) {
+                    result.add(item)
+                }
+            }
+        }
+        return result
+    }
 
     private fun getSelectedPaths() = getSelectedItems().map { it.path } as ArrayList<String>
 

@@ -217,7 +217,7 @@ private fun ViewGroup.findActionMenuView(): ActionMenuView? {
     return null
 }
 
-/** Flat tonal selection bar with a close cross, a clear count and round icon buttons. */
+/** Flat tonal selection bar with a close cross, a clear count and plain icon buttons. */
 @SuppressLint("RestrictedApi")
 private fun ViewGroup.styleExpressiveActionBar() {
     val ctx = context
@@ -244,21 +244,14 @@ private fun ViewGroup.styleExpressiveActionBar() {
         }
     }
 
-    fun circle(color: Int): LayerDrawable {
-        val oval = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(color)
-        }
-        return LayerDrawable(arrayOf<android.graphics.drawable.Drawable>(oval)).apply {
-            setLayerSize(0, dp(40f), dp(40f))
-            setLayerGravity(0, Gravity.CENTER)
-        }
-    }
-
+    // icons only: no filled circle behind the buttons, just a faint round ripple while pressed
     fun chip() = RippleDrawable(
         ColorStateList.valueOf(ColorUtils.setAlphaComponent(textColor, 40)),
-        circle(ColorUtils.setAlphaComponent(textColor, 22)),
-        circle(Color.WHITE)
+        null,
+        GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.WHITE)
+        }
     )
 
     val menuView = findActionMenuView() ?: return

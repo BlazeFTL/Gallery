@@ -3,26 +3,25 @@ package org.fossify.gallery.helpers
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
-import org.fossify.commons.extensions.baseConfig
 import org.fossify.gallery.R
 import org.fossify.gallery.activities.SplashActivity
 import org.fossify.gallery.extensions.config
 
 /**
- * Launcher icon designs on top of the color icons of the commons library. Every design is an activity-alias in the
- * manifest, exactly one launcher entry is enabled at a time.
+ * Launcher icon designs. Every design is an activity-alias in the manifest, exactly one launcher entry is enabled
+ * at a time. The icon never follows the theme colors: the Gallery icon is the default until another one is picked.
  */
 object AppIconStyles {
-    const val CLASSIC = 0
+    const val GALLERY = 0
     const val COUNT = 6
+    const val MONOCHROME = 7
 
-    // same order as the app icon colors, the library switches the color icons by index
-    private val colorAliases = listOf(
-        "Red", "Pink", "Purple", "Deep_purple", "Indigo", "Blue", "Light_blue", "Cyan", "Teal", "Green",
-        "Light_green", "Lime", "Yellow", "Amber", "Orange", "Deep_orange", "Brown", "Blue_grey", "Grey_black"
-    )
+    /** Order shown in the picker. */
+    val all = listOf(GALLERY, MONOCHROME) + (1..COUNT)
 
-    val previews = intArrayOf(
+    private val allAliases = all.map { aliasOf(it) }
+
+    private val stylePreviews = intArrayOf(
         R.mipmap.ic_launcher_style1,
         R.mipmap.ic_launcher_style2,
         R.mipmap.ic_launcher_style3,
@@ -31,7 +30,7 @@ object AppIconStyles {
         R.mipmap.ic_launcher_style6
     )
 
-    val names = intArrayOf(
+    private val styleNames = intArrayOf(
         R.string.app_icon_style_1,
         R.string.app_icon_style_2,
         R.string.app_icon_style_3,
@@ -40,34 +39,41 @@ object AppIconStyles {
         R.string.app_icon_style_6
     )
 
-    /** [style] 0 brings back the color icon, 1..[COUNT] switches to that design. */
+    fun previewOf(style: Int): Int = when {
+        style == MONOCHROME -> R.mipmap.ic_launcher_mono
+        style in 1..COUNT -> stylePreviews[style - 1]
+        else -> R.mipmap.ic_launcher
+    }
+
+    fun nameOf(style: Int): Int = when {
+        style == MONOCHROME -> R.string.app_icon_monochrome
+        style in 1..COUNT -> styleNames[style - 1]
+        else -> R.string.app_icon_gallery
+    }
+
+    private fun aliasOf(style: Int): String = when {
+        style == MONOCHROME -> "Mono"
+        style in 1..COUNT -> "Style$style"
+        else -> "Gallery"
+    }
+
+    private fun normalize(style: Int) = if (style == MONOCHROME || style in 1..COUNT) style else GALLERY
+
+    /** Switches the launcher to the given design. */
     fun apply(context: Context, style: Int) {
-        val safeStyle = if (style in 1..COUNT) style else CLASSIC
+        val safeStyle = normalize(style)
         context.config.appIconStyle = safeStyle
 
-        val colors = context.resources.getIntArray(org.fossify.commons.R.array.md_app_icon_colors)
-        val colorIndex = colors.indexOf(context.baseConfig.appIconColor)
-        val target = if (safeStyle == CLASSIC) {
-            colorAliases.getOrElse(colorIndex) { "Green" }
-        } else {
-            "Style$safeStyle"
-        }
-
+        val target = aliasOf(safeStyle)
         // the new entry goes first so the launcher never ends up without one
         setEnabled(context, target, true)
-        val all = colorAliases + (1..COUNT).map { "Style$it" }
-        all.filter { it != target }.forEach { setEnabled(context, it, false) }
+        allAliases.filter { it != target }.forEach { setEnabled(context, it, false) }
     }
 
-    fun currentStyle(context: Context) = context.config.appIconStyle
+    fun currentStyle(context: Context) = normalize(context.config.appIconStyle)
 
-    /** Keeps a chosen design when the library switches the color icon on its own. */
-    fun ensureApplied(context: Context) {
-        val style = context.config.appIconStyle
-        if (style in 1..COUNT) {
-            apply(context, style)
-        }
-    }
+    /** Makes sure only the chosen design is enabled. */
+    fun ensureApplied(context: Context) = apply(context, context.config.appIconStyle)
 
     private fun setEnabled(context: Context, alias: String, enabled: Boolean) {
         try {

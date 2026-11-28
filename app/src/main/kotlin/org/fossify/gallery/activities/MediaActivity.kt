@@ -1167,6 +1167,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
 
         Thread {
+            // written down first: when the app is killed halfway, the rest is finished on the next start
+            val journal = FastScanner.journalStart(appContext, paths, binRoot)
             val codes = FastScanner.delete(paths, binRoot)
             FastScanner.finishDelete(paths, codes)
 
@@ -1192,6 +1194,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             }
 
             FastScanner.removeFromMediaStore(appContext, doneItems)
+            FastScanner.journalDone(journal)
 
             if (folderEmptied) {
                 if (failedCount == 0) {

@@ -240,6 +240,8 @@
     <string name="app_icon_style_4" translatable="false">Stack</string>
     <string name="app_icon_style_5" translatable="false">Petals</string>
     <string name="app_icon_style_6" translatable="false">Sunset</string>
+    <string name="app_icon_gallery" translatable="false">Gallery</string>
+    <string name="app_icon_monochrome" translatable="false">Monochrome</string>
     <string name="limit_folder_title">Limit long folder titles to 1 line</string>
     <string name="square">Square</string>
     <string name="rounded_corners">Rounded corners</string>

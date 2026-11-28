@@ -15,6 +15,7 @@ import android.widget.ImageView
 import android.widget.RelativeLayout
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.ColorUtils
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -826,9 +827,21 @@ class DirectoryAdapter(
         val directories = newDirs.clone() as ArrayList<Directory>
         if (directories.hashCode() != currentDirectoriesHash) {
             currentDirectoriesHash = directories.hashCode()
+            val old = dirs
             dirs = directories
             fillLockedFolders()
-            notifyDataSetChanged()
+
+            // removed albums collapse, new ones slide in, the rest stays where it is
+            val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize() = old.size
+                override fun getNewListSize() = directories.size
+                override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+                    old[oldItemPosition].path == directories[newItemPosition].path
+
+                override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+                    old[oldItemPosition] == directories[newItemPosition]
+            }, false)
+            diff.dispatchUpdatesTo(this)
             finishActMode()
         }
     }

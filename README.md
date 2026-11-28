@@ -15,16 +15,29 @@ No ads, no trackers, no network access.
 
 Gallery is a fork of [Fossify Gallery](https://github.com/FossifyOrg/Gallery), which is itself based on [Simple Gallery](https://github.com/SimpleMobileTools/Simple-Gallery). The upstream project rarely receives updates, so this fork carries its own design, fixes and features.
 
+## Screenshots
+
+<div align="center">
+
+<img src="screenshots/01-albums.webp" width="190" alt="Albums" />
+<img src="screenshots/02-menu.webp" width="190" alt="Menu" />
+<img src="screenshots/03-sort.webp" width="190" alt="Sort by" />
+<img src="screenshots/04-settings.webp" width="190" alt="Settings" />
+<img src="screenshots/05-settings-more.webp" width="190" alt="More settings" />
+<img src="screenshots/06-customize.webp" width="190" alt="Customize appearance" />
+<img src="screenshots/07-themes.webp" width="190" alt="App themes" />
+
+</div>
+
 ## What is different in this fork
 
 - Design updates across the app
-- Updated icons
-- Improved media scanning
+- Updated icons, with a Gallery icon (default) and a Monochrome icon that never change with the theme colors
+- Albums show up at once when the app opens, new and removed photos and folders are picked up right away
 - Album title shown under the album cover
-- 5 new app icons
+- 5 more app icons
 - Custom themes
-- Fixed a delete bug
-- Improved deleting of multiple photos at once
+- Fixed a delete bug, deleting is instant and an interrupted delete is finished on the next start
 - Redesigned About page
 - Build workflow that outputs direct APKs, split by architecture
 
@@ -40,7 +53,7 @@ Gallery is a fork of [Fossify Gallery](https://github.com/FossifyOrg/Gallery), w
 
 ## Download
 
-Get the latest APK from the [Releases](https://github.com/BlazeFTL/Gallery/releases) page. Every release asset is a direct APK, there is nothing to unzip.
+Get the latest APK from the [Releases](https://github.com/BlazeFTL/Gallery/releases) page. Every release asset is a direct APK, there is nothing to unzip. The package name is `com.blazeftl.gallery` (`com.blazeftl.gallery.debug` for debug builds), so it installs next to the original Fossify Gallery.
 
 | File ends with | Use it on |
 | --- | --- |

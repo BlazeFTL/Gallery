@@ -21,11 +21,10 @@ import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.gallery.R
 import org.fossify.gallery.helpers.AppIconStyles
 
-/** Lets the user pick one of the launcher icon designs, or go back to the classic color icon. */
+/** Lets the user pick one of the launcher icon designs. The icon never follows the theme colors. */
 class AppIconStyleDialog(
     private val activity: BaseSimpleActivity,
     private val selectedStyle: Int,
-    private val onClassic: () -> Unit,
     private val onStyle: (Int) -> Unit
 ) {
     private var dialog: AlertDialog? = null
@@ -47,22 +46,33 @@ class AppIconStyleDialog(
             setPadding(dp(4), 0, dp(4), dp(16))
         })
 
-        content.addView(buildClassicRow())
-
-        val names = AppIconStyles.names
-        var row: LinearLayout? = null
-        for (index in 0 until AppIconStyles.COUNT) {
+        val rows = ArrayList<LinearLayout>()
+        AppIconStyles.all.forEachIndexed { index, style ->
             if (index % 3 == 0) {
-                row = LinearLayout(activity).apply {
+                val newRow = LinearLayout(activity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { topMargin = dp(12) }
+                    ).apply { topMargin = dp(if (index == 0) 0 else 12) }
                 }
-                content.addView(row)
+                rows.add(newRow)
+                content.addView(newRow)
             }
-            row?.addView(buildTile(index + 1, activity.getString(names[index])))
+            rows.last().addView(buildTile(style, activity.getString(AppIconStyles.nameOf(style))))
+        }
+
+        // keeps the tiles of the last row the same width as the others
+        val remainder = AppIconStyles.all.size % 3
+        if (remainder != 0) {
+            repeat(3 - remainder) {
+                rows.last().addView(View(activity).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f).apply {
+                        marginStart = dp(4)
+                        marginEnd = dp(4)
+                    }
+                })
+            }
         }
 
         val scroll = ScrollView(activity).apply { addView(content) }
@@ -93,40 +103,6 @@ class AppIconStyleDialog(
         }
     }
 
-    private fun buildClassicRow(): View {
-        val row = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(10), dp(16), dp(10))
-            background = tileBackground(selectedStyle == AppIconStyles.CLASSIC)
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                dialog?.dismiss()
-                onClassic()
-            }
-        }
-
-        row.addView(previewOf(R.mipmap.ic_launcher, 52))
-        val texts = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), 0, 0, 0)
-        }
-        texts.addView(TextView(activity).apply {
-            setText(R.string.app_icon_style_classic)
-            setTextColor(textColor)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        })
-        texts.addView(TextView(activity).apply {
-            setText(R.string.app_icon_style_classic_hint)
-            setTextColor(ColorUtils.setAlphaComponent(textColor, 160))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-        })
-        row.addView(texts)
-        return row
-    }
-
     private fun buildTile(style: Int, name: String): View {
         val tile = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -148,7 +124,7 @@ class AppIconStyleDialog(
         val frame = FrameLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
         }
-        frame.addView(previewOf(AppIconStyles.previews[style - 1], 64))
+        frame.addView(previewOf(AppIconStyles.previewOf(style), 64))
         tile.addView(frame)
         tile.addView(TextView(activity).apply {
             text = name
